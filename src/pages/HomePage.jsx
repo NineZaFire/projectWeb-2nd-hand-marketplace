@@ -2,15 +2,22 @@ import React from "react";
 import { UserService } from "../services/UserService";
 import { MyShopService } from "../services/MyShopService";
 import { ProductCategory } from "../models/ProductCategory";
+import { CartService } from "../services/CartService";
 
 export class HomePage extends React.Component {
   state = {
     showProfilePopup: false,
+    showCartPopup: false,
     showEditModal: false,
     draft: null,
     avatarFile: null,
     saving: false,
     error: "",
+    cartLoading: false,
+    cartError: "",
+    cartDone: "",
+    cartItems: [],
+    checkingOut: false,
     loadingProducts: true,
     productsError: "",
     products: [],
@@ -20,6 +27,7 @@ export class HomePage extends React.Component {
 
   userService = UserService.instance();
   myShopService = MyShopService.instance();
+  cartService = CartService.instance();
 
   async componentDidMount() {
     await this.loadMarketplaceProducts();
@@ -42,6 +50,7 @@ export class HomePage extends React.Component {
   openProfilePopup = () => {
     this.setState({
       showProfilePopup: true,
+      showCartPopup: false,
       showEditModal: false,
       draft: { ...(this.props.user ?? {}) },
       avatarFile: null,
@@ -76,6 +85,81 @@ export class HomePage extends React.Component {
     this.setState({ showProfilePopup: false });
     this.props.onGoMyShop?.();
   };
+
+  openCartPopup = async () => {
+    this.props.onCart?.();
+    this.setState({
+      showCartPopup: true,
+      showProfilePopup: false,
+      cartError: "",
+      cartDone: "",
+    });
+    await this.loadCartItems();
+  };
+
+  closeCartPopup = () => {
+    this.setState({ showCartPopup: false, cartError: "", cartDone: "" });
+  };
+
+  loadCartItems = async () => {
+    this.setState({ cartLoading: true, cartError: "" });
+    try {
+      const { items } = await this.cartService.listMyCart();
+      this.setState({ cartItems: items ?? [] });
+    } catch (e) {
+      this.setState({ cartError: e?.message ?? "โหลดตะกร้าสินค้าไม่สำเร็จ" });
+    } finally {
+      this.setState({ cartLoading: false });
+    }
+  };
+
+  removeCartItem = async (item) => {
+    try {
+      await this.cartService.removeItem({
+        itemId: item?.id,
+        productId: item?.productId,
+      });
+      await this.loadCartItems();
+      this.setState({ cartDone: "ลบสินค้าออกจากตะกร้าแล้ว" });
+    } catch (e) {
+      this.setState({ cartError: e?.message ?? "ลบสินค้าออกจากตะกร้าไม่สำเร็จ" });
+    }
+  };
+
+  openCartItem = (item) => {
+    this.setState({ showCartPopup: false });
+    this.props.onOpenProduct?.(item?.toProductPayload?.() ?? null);
+  };
+
+  checkoutCart = async () => {
+    if (!this.state.cartItems.length) return;
+
+    this.setState({ checkingOut: true, cartError: "", cartDone: "" });
+    try {
+      const result = await this.cartService.checkout();
+      await this.loadCartItems();
+      this.setState({
+        cartDone: result?.message ?? "สั่งซื้อเรียบร้อย",
+      });
+    } catch (e) {
+      this.setState({ cartError: e?.message ?? "สั่งซื้อไม่สำเร็จ" });
+    } finally {
+      this.setState({ checkingOut: false });
+    }
+  };
+
+  getCartTotalLabel() {
+    const total = (this.state.cartItems ?? []).reduce(
+      (sum, item) => sum + (item?.getLineTotalNumber?.() ?? 0),
+      0,
+    );
+
+    return new Intl.NumberFormat("th-TH", {
+      style: "currency",
+      currency: "THB",
+      maximumFractionDigits: 2,
+    }).format(total);
+  }
 
   setDraftField = (key, value) => {
     this.setState((s) => ({
@@ -148,17 +232,24 @@ export class HomePage extends React.Component {
   render() {
     const {
       showProfilePopup,
+      showCartPopup,
       showEditModal,
       draft,
       saving,
       error,
       avatarFile,
+      cartLoading,
+      cartError,
+      cartDone,
+      cartItems,
+      checkingOut,
       loadingProducts,
       productsError,
       selectedCategory,
     } = this.state;
     const user = this.props.user ?? {};
     const filteredProducts = this.getFilteredProducts();
+    const cartTotalLabel = this.getCartTotalLabel();
 
     return (
       <div className="min-h-dvh bg-zinc-50">
@@ -184,7 +275,7 @@ export class HomePage extends React.Component {
 
             <button
               className="h-10 w-10 rounded-xl bg-[#F4D03E] border border-zinc-200 grid place-items-center"
-              onClick={this.props.onCart}
+              onClick={this.openCartPopup}
               title="ตะกร้า"
             >
               🛒
@@ -234,6 +325,21 @@ export class HomePage extends React.Component {
             </div>
           </div>
         </div>
+
+        {showCartPopup ? (
+          <CartPopup
+            items={cartItems}
+            loading={cartLoading}
+            error={cartError}
+            done={cartDone}
+            checkingOut={checkingOut}
+            totalLabel={cartTotalLabel}
+            onClose={this.closeCartPopup}
+            onOpenItem={this.openCartItem}
+            onRemoveItem={this.removeCartItem}
+            onCheckout={this.checkoutCart}
+          />
+        ) : null}
 
         {showProfilePopup ? (
           <ProfilePopup
@@ -313,7 +419,6 @@ class HomeProductCard extends React.Component {
     const { product } = this.props;
     return (
       <article className="rounded-2xl border border-zinc-200 p-3 bg-white">
-        
         <div className="aspect-square rounded-xl bg-zinc-100 overflow-hidden grid place-items-center">
           {product?.imageUrl ? (
             <img src={product.imageUrl} alt={product?.name ?? "product"} className="h-full w-full object-cover" />
@@ -329,6 +434,131 @@ class HomeProductCard extends React.Component {
           <div className="text-sm font-medium text-zinc-700">{product?.getPriceLabel?.() ?? "฿0.00"}</div>
         </div>
       </article>
+    );
+  }
+}
+
+class CartPopup extends React.Component {
+  stop = (e) => e.stopPropagation();
+
+  render() {
+    const {
+      items,
+      loading,
+      error,
+      done,
+      checkingOut,
+      totalLabel,
+      onClose,
+      onOpenItem,
+      onRemoveItem,
+      onCheckout,
+    } = this.props;
+
+    return (
+      <div className="fixed inset-0 z-50" onClick={onClose}>
+        <div
+          className="absolute right-5 top-23 w-[28rem] max-w-[calc(100vw-2rem)]"
+          onClick={this.stop}
+        >
+          <div className="absolute -top-1.5 right-21 h-3 w-3 rotate-45 bg-white border-l border-t border-zinc-200" />
+          <div className="rounded-3xl border border-zinc-200 bg-white shadow-xl p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="text-base font-semibold text-zinc-900">ตะกร้าสินค้า</div>
+              <button
+                type="button"
+                className="h-8 w-8 rounded-lg border border-zinc-200 grid place-items-center text-zinc-700"
+                onClick={onClose}
+                title="ปิด"
+              >
+                ✕
+              </button>
+            </div>
+
+            {loading ? <div className="text-sm text-zinc-500">กำลังโหลดตะกร้าสินค้า...</div> : null}
+            {error ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {error}
+              </div>
+            ) : null}
+            {done ? (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+                {done}
+              </div>
+            ) : null}
+
+            {!loading && !items?.length ? (
+              <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-4 text-center text-sm text-zinc-500">
+                ยังไม่มีสินค้าในตะกร้า
+              </div>
+            ) : null}
+
+            {!loading && items?.length ? (
+              <div className="max-h-72 space-y-2 overflow-y-auto hide-scrollbar pr-1">
+                {items.map((item, index) => (
+                  <div
+                    key={item.id || item.productId || `${item.name}-${index}`}
+                    className="flex items-center gap-2 rounded-xl border border-zinc-200 p-2"
+                  >
+                    <button
+                      type="button"
+                      className="flex flex-1 items-center gap-3 text-left"
+                      onClick={() => onOpenItem?.(item)}
+                      title="ดูหน้าสินค้า"
+                    >
+                      <div className="h-16 w-16 shrink-0 rounded-lg bg-zinc-100 overflow-hidden grid place-items-center">
+                        {item?.imageUrl ? (
+                          <img
+                            src={item.imageUrl}
+                            alt={item?.name ?? "cart-item"}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-xs text-zinc-400">ไม่มีรูป</span>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="line-clamp-2 text-sm font-semibold text-zinc-800 break-words">
+                          {item?.name || "ไม่ระบุชื่อสินค้า"}
+                        </div>
+                        <div className="text-xs text-zinc-500">
+                          {item?.getPriceLabel?.() ?? "฿0.00"} x {item?.quantity ?? 1}
+                        </div>
+                        <div className="text-sm font-medium text-zinc-700">
+                          {item?.getLineTotalLabel?.() ?? "฿0.00"}
+                        </div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      className="rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+                      onClick={() => onRemoveItem?.(item)}
+                    >
+                      ลบ
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="rounded-xl bg-zinc-50 px-3 py-2.5 text-sm text-zinc-700">
+              รวมทั้งหมด: <span className="font-semibold text-zinc-900">{totalLabel}</span>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                className="rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+                disabled={checkingOut || !items?.length}
+                onClick={onCheckout}
+              >
+                {checkingOut ? "กำลังสั่งซื้อ..." : "สั่งซื้อ"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     );
   }
 }

@@ -3,6 +3,7 @@ import { LoginPage } from "../pages/LoginPage";
 import { RegisterPage } from "../pages/RegisterPage";
 import { HomePage } from "../pages/HomePage";
 import { MyShopPage } from "../pages/MyShopPage";
+import { ProductDetailPage } from "../pages/ProductDetailPage";
 import { AuthService } from "../services/AuthService";
 
 export default class App extends React.Component {
@@ -10,6 +11,7 @@ export default class App extends React.Component {
   state = {
     route: import.meta.env.DEV ? "home" : "login",
     user: import.meta.env.DEV ? { name: "Preview User" } : null,
+    selectedProduct: null,
     booting: true,
   };
 
@@ -35,7 +37,8 @@ export default class App extends React.Component {
   // ✅ HomePage เรียกกลับมาเมื่อแก้โปรไฟล์สำเร็จ
   onUpdatedUser = (user) => this.setState({ user });
   onGoMyShop = () => this.setState({ route: "myshop" });
-  onBackHome = () => this.setState({ route: "home" });
+  onBackHome = () => this.setState({ route: "home", selectedProduct: null });
+  onOpenProduct = (product) => this.setState({ route: "product", selectedProduct: product ?? null });
 
   onLogout = async () => {
     try {
@@ -46,7 +49,7 @@ export default class App extends React.Component {
   };
 
   render() {
-    const { route, user, booting } = this.state;
+    const { route, user, selectedProduct, booting } = this.state;
     if (booting) return null;
 
     // guard
@@ -81,6 +84,10 @@ export default class App extends React.Component {
       return <MyShopPage user={user} onBack={this.onBackHome} />;
     }
 
+    if (route === "product") {
+      return <ProductDetailPage product={selectedProduct} onBack={this.onBackHome} />;
+    }
+
     return (
       <HomePage
         user={user}
@@ -92,6 +99,7 @@ export default class App extends React.Component {
         onUpdatedUser={this.onUpdatedUser} // ✅ เพิ่ม
         onGoMyShop={this.onGoMyShop}
         onGoHome={this.onBackHome}
+        onOpenProduct={this.onOpenProduct}
       />
     );
   }
