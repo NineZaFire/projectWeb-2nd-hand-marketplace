@@ -177,6 +177,12 @@ export class HomePage extends React.Component {
     this.props.onSearch?.(value);
   };
 
+  onSearchSubmit = (e) => {
+    e.preventDefault();
+    const keyword = (this.state.searchKeyword ?? "").trim();
+    this.props.onSubmitSearch?.(keyword);
+  };
+
   onCategoryChange = (category) => {
     this.setState({ selectedCategory: category });
     this.props.onPickCategory?.(category);
@@ -245,6 +251,7 @@ export class HomePage extends React.Component {
       checkingOut,
       loadingProducts,
       productsError,
+      searchKeyword,
       selectedCategory,
     } = this.state;
     const user = this.props.user ?? {};
@@ -267,11 +274,14 @@ export class HomePage extends React.Component {
                 className="h-20 w-20 rounded-xl object-cover"
               />
             </button>
-            <input
-              className="flex-1 rounded-xl border bg-white border-zinc-200 px-3 py-2 text-sm outline-none"
-              placeholder="ค้นหาสินค้า..."
-              onChange={(e) => this.onSearchChange(e.target.value)}
-            />
+            <form className="flex-1" onSubmit={this.onSearchSubmit}>
+              <input
+                className="w-full rounded-xl border bg-white border-zinc-200 px-3 py-2 text-sm outline-none"
+                placeholder="ค้นหาสินค้า..."
+                value={searchKeyword}
+                onChange={(e) => this.onSearchChange(e.target.value)}
+              />
+            </form>
 
             <button
               className="h-10 w-10 rounded-xl bg-[#F4D03E] border border-zinc-200 grid place-items-center"

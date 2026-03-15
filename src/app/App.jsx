@@ -4,6 +4,7 @@ import { RegisterPage } from "../pages/RegisterPage";
 import { HomePage } from "../pages/HomePage";
 import { MyShopPage } from "../pages/MyShopPage";
 import { ProductDetailPage } from "../pages/ProductDetailPage";
+import { SearchProductsPage } from "../pages/SearchProductsPage";
 import { AuthService } from "../services/AuthService";
 
 export default class App extends React.Component {
@@ -12,6 +13,7 @@ export default class App extends React.Component {
     route: import.meta.env.DEV ? "home" : "login",
     user: import.meta.env.DEV ? { name: "Preview User" } : null,
     selectedProduct: null,
+    searchKeyword: "",
     booting: true,
   };
 
@@ -39,6 +41,7 @@ export default class App extends React.Component {
   onGoMyShop = () => this.setState({ route: "myshop" });
   onBackHome = () => this.setState({ route: "home", selectedProduct: null });
   onOpenProduct = (product) => this.setState({ route: "product", selectedProduct: product ?? null });
+  onOpenSearch = (keyword) => this.setState({ route: "search", searchKeyword: keyword ?? "" });
 
   onLogout = async () => {
     try {
@@ -49,7 +52,7 @@ export default class App extends React.Component {
   };
 
   render() {
-    const { route, user, selectedProduct, booting } = this.state;
+    const { route, user, selectedProduct, searchKeyword, booting } = this.state;
     if (booting) return null;
 
     // guard
@@ -88,6 +91,17 @@ export default class App extends React.Component {
       return <ProductDetailPage product={selectedProduct} onBack={this.onBackHome} />;
     }
 
+    if (route === "search") {
+      return (
+        <SearchProductsPage
+          initialKeyword={searchKeyword}
+          onBack={this.onBackHome}
+          onGoHome={this.onBackHome}
+          onOpenProduct={this.onOpenProduct}
+        />
+      );
+    }
+
     return (
       <HomePage
         user={user}
@@ -100,6 +114,7 @@ export default class App extends React.Component {
         onGoMyShop={this.onGoMyShop}
         onGoHome={this.onBackHome}
         onOpenProduct={this.onOpenProduct}
+        onSubmitSearch={this.onOpenSearch}
       />
     );
   }

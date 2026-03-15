@@ -47,6 +47,32 @@ export class MyShopService {
     return { products };
   }
 
+  // โครง backend: GET /api/products/search?keyword=... (ค้นหาสินค้าจาก database ด้วยความเหมือนชื่อสินค้า)
+  async searchMarketplaceProducts(keyword) {
+    const normalizedKeyword = (keyword ?? "").trim();
+    const encodedKeyword = encodeURIComponent(normalizedKeyword);
+    const searchPath = normalizedKeyword
+      ? `/api/products/search?keyword=${encodedKeyword}`
+      : "/api/products/search";
+
+    try {
+      const result = await this.http.get(searchPath);
+      const products = Array.isArray(result?.products)
+        ? result.products.map((item) => ShopProduct.fromJSON(item))
+        : [];
+      return { products };
+    } catch (primaryError) {
+      // fallback เผื่อ backend ใช้ query เดิม /api/products?keyword=...
+      if (!normalizedKeyword) throw primaryError;
+
+      const fallback = await this.http.get(`/api/products?keyword=${encodedKeyword}`);
+      const products = Array.isArray(fallback?.products)
+        ? fallback.products.map((item) => ShopProduct.fromJSON(item))
+        : [];
+      return { products };
+    }
+  }
+
   // โครง backend: POST /api/myshop/products (สร้างสินค้าใหม่และเก็บลง database)
   async createProduct(payload, imageFiles) {
     const formData = new FormData();
