@@ -1,8 +1,43 @@
 import React from "react";
 import { ShopProduct } from "../models/ShopProduct";
 import { ProductCategory } from "../models/ProductCategory";
+import { MyShopService } from "../services/MyShopService";
+import { CartService } from "../services/CartService";
 
 export class ProductDetailPage extends React.Component {
+  state = {
+    loadingProduct: false,
+    productError: "",
+    productFromDatabase: null,
+    searchKeyword: "",
+    addingToCart: false,
+    openingChat: false,
+    actionError: "",
+    actionDone: "",
+  };
+
+  myShopService = MyShopService.instance();
+  cartService = CartService.instance();
+
+  componentDidMount() {
+    this.syncProductFromDatabase();
+  }
+
+  componentDidUpdate(prevProps) {
+    const prevProductId = this.getProductId(prevProps.product);
+    const nextProductId = this.getProductId(this.props.product);
+
+    if (prevProductId !== nextProductId) {
+      this.syncProductFromDatabase();
+    }
+  }
+
+  getProductId(productInput) {
+    if (!productInput) return "";
+    if (productInput instanceof ShopProduct) return `${productInput.id ?? ""}`;
+    return `${productInput?.id ?? productInput?._id ?? ""}`;
+  }
+
   toProduct() {
     const { product } = this.props;
     if (!product) return ShopProduct.empty();
@@ -10,8 +45,122 @@ export class ProductDetailPage extends React.Component {
     return ShopProduct.fromJSON(product);
   }
 
+  getResolvedProduct() {
+    return this.state.productFromDatabase ?? this.toProduct();
+  }
+
+  syncProductFromDatabase = async () => {
+    const fallbackProduct = this.toProduct();
+    const productId = `${fallbackProduct?.id ?? ""}`.trim();
+
+    if (!productId) {
+      this.setState({
+        loadingProduct: false,
+        productError: "",
+        productFromDatabase: null,
+      });
+      return;
+    }
+
+    this.setState({ loadingProduct: true, productError: "", productFromDatabase: null });
+
+    try {
+      const { product } = await this.myShopService.getMarketplaceProductById(productId);
+      this.setState({
+        productFromDatabase: product ?? null,
+      });
+    } catch (e) {
+      this.setState({
+        productError: e?.message ?? "โหลดข้อมูลสินค้าจากฐานข้อมูลไม่สำเร็จ",
+        productFromDatabase: null,
+      });
+    } finally {
+      this.setState({ loadingProduct: false });
+    }
+  };
+
+  onSearchChange = (value) => {
+    this.setState({ searchKeyword: value ?? "" });
+  };
+
+  onSearchSubmit = (e) => {
+    e.preventDefault();
+    const keyword = (this.state.searchKeyword ?? "").trim();
+    this.props.onSubmitSearch?.(keyword);
+  };
+
+  onAddToCart = async () => {
+    const product = this.getResolvedProduct();
+    if (!product?.id) {
+      this.setState({ actionError: "ไม่พบรหัสสินค้า จึงยังเพิ่มลงตะกร้าไม่ได้", actionDone: "" });
+      return;
+    }
+
+    this.setState({
+      addingToCart: true,
+      actionError: "",
+      actionDone: "",
+    });
+
+    try {
+      await this.cartService.addItem({ productId: product.id, quantity: 1 });
+      this.setState({
+        actionDone: "เพิ่มสินค้าลงตะกร้าแล้ว",
+      });
+    } catch (e) {
+      this.setState({
+        actionError: e?.message ?? "เพิ่มสินค้าลงตะกร้าไม่สำเร็จ",
+      });
+    } finally {
+      this.setState({ addingToCart: false });
+    }
+  };
+
+  onChatSeller = async () => {
+    const product = this.getResolvedProduct();
+    if (!product?.id) {
+      this.setState({ actionError: "ไม่พบรหัสสินค้า จึงยังเริ่มแชทไม่ได้", actionDone: "" });
+      return;
+    }
+
+    this.setState({
+      openingChat: true,
+      actionError: "",
+      actionDone: "",
+    });
+
+    try {
+      const result = await this.myShopService.startProductChat({
+        productId: product.id,
+        ownerId: product.ownerId,
+        message: `สนใจสินค้า ${product?.name ?? ""}`.trim(),
+      });
+
+      this.setState({
+        actionDone: result?.chatId
+          ? `สร้างห้องแชทแล้ว (chatId: ${result.chatId})`
+          : "สร้างห้องแชทกับร้านค้าแล้ว",
+      });
+    } catch (e) {
+      this.setState({
+        actionError: e?.message ?? "เริ่มแชทกับร้านค้าไม่สำเร็จ",
+      });
+    } finally {
+      this.setState({ openingChat: false });
+    }
+  };
+
   render() {
-    const product = this.toProduct();
+    const {
+      loadingProduct,
+      productError,
+      searchKeyword,
+      addingToCart,
+      openingChat,
+      actionError,
+      actionDone,
+    } = this.state;
+    const product = this.getResolvedProduct();
     const imageUrls = product.getImageUrls();
     const primaryImage = imageUrls[0] ?? "";
     const hasProductData = Boolean(product?.id || product?.name);
@@ -19,21 +168,65 @@ export class ProductDetailPage extends React.Component {
     return (
       <div className="min-h-dvh bg-zinc-50">
         <div className="sticky top-0 z-40 bg-[#A4E3D8] border-b border-zinc-200">
-          <div className="mx-auto max-w-6xl px-4 py-3 flex items-center gap-3">
+          <div className="mx-auto max-w-350 px-4 py-5 flex items-center gap-8">
             <button
-              className="h-10 w-10 rounded-xl bg-[#F4D03E] border border-zinc-200 grid place-items-center text-lg"
-              onClick={this.props.onBack}
-              title="ย้อนกลับ"
-              aria-label="ย้อนกลับ"
+              type="button"
+              onClick={this.props.onGoHome}
+              title="กลับหน้าแรก"
+              className="shrink-0 rounded-xl border border-zinc-200 bg-white p-0"
             >
-              ←
+              <img
+                src="/App logo.jpg"
+                alt="App logo"
+                className="h-20 w-20 rounded-xl object-cover"
+              />
             </button>
-            <div className="font-semibold text-zinc-900">รายละเอียดสินค้า</div>
+            <form className="flex-1" onSubmit={this.onSearchSubmit}>
+              <input
+                className="w-full rounded-xl border bg-white border-zinc-200 px-3 py-2 text-sm outline-none"
+                placeholder="ค้นหาสินค้า..."
+                value={searchKeyword}
+                onChange={(e) => this.onSearchChange(e.target.value)}
+              />
+            </form>
+
+            <button
+              className="h-10 w-10 rounded-xl bg-[#F4D03E] border border-zinc-200 grid place-items-center"
+              onClick={this.props.onCart}
+              title="ตะกร้า"
+            >
+              🛒
+            </button>
+
+            <button
+              className="h-10 w-10 rounded-xl bg-[#F4D03E] text-white grid place-items-center"
+              onClick={this.props.onToggleMenu}
+              title="บัญชี"
+            >
+              👤
+            </button>
           </div>
         </div>
 
-        <div className="mx-auto max-w-6xl px-4 py-6">
-          <div className="rounded-2xl bg-white shadow p-4 md:p-6">
+        <div className="mx-auto max-w-375 px-4 py-6">
+          <div className="rounded-2xl bg-white shadow p-4 md:p-6 space-y-4">
+            {loadingProduct ? <div className="text-sm text-zinc-500">กำลังโหลดข้อมูลสินค้าจากฐานข้อมูล...</div> : null}
+            {productError ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {productError}
+              </div>
+            ) : null}
+            {actionError ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {actionError}
+              </div>
+            ) : null}
+            {actionDone ? (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+                {actionDone}
+              </div>
+            ) : null}
+
             {!hasProductData ? (
               <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-6 text-center text-sm text-zinc-500">
                 ยังไม่มีข้อมูลสินค้า
@@ -70,10 +263,30 @@ export class ProductDetailPage extends React.Component {
                   <div className="text-2xl font-semibold text-zinc-900 break-words">
                     {product?.name || "ไม่ระบุชื่อสินค้า"}
                   </div>
+                  <div className="text-xl font-semibold text-zinc-800">{product?.getPriceLabel?.() ?? "฿0.00"}</div>
+
+                  <div className="grid max-w-md grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      className="rounded-xl border border-zinc-200 px-3 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+                      onClick={this.onChatSeller}
+                      disabled={openingChat}
+                    >
+                      {openingChat ? "กำลังสร้างแชท..." : "คุยกับร้านค้า"}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-xl bg-zinc-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                      onClick={this.onAddToCart}
+                      disabled={addingToCart}
+                    >
+                      {addingToCart ? "กำลังเพิ่ม..." : "เพิ่มลงตะกร้า"}
+                    </button>
+                  </div>
+
                   <div className="inline-flex rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-700">
                     {ProductCategory.getLabel(product?.category)}
                   </div>
-                  <div className="text-xl font-semibold text-zinc-800">{product?.getPriceLabel?.() ?? "฿0.00"}</div>
                   <p className="rounded-xl bg-zinc-50 p-3 text-sm text-zinc-700 whitespace-pre-line break-words">
                     {product?.description || "ยังไม่มีคำอธิบายสินค้า"}
                   </p>

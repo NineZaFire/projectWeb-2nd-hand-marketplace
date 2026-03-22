@@ -189,29 +189,33 @@ export class MyShopPage extends React.Component {
     return (
       <div className="min-h-dvh bg-zinc-50">
         <div className="sticky top-0 z-40 bg-[#A4E3D8] border-b border-zinc-200">
-          <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
+          <div className="mx-auto max-w-6xl px-4 py-6 flex items-center justify-between gap-8">
+            <div className="flex items-center gap-3 ">
               <button
-                className="h-10 w-10 rounded-xl bg-[#F4D03E] border border-zinc-200 grid place-items-center text-lg"
+                type="button"
                 onClick={onBack}
-                title="ย้อนกลับ"
-                aria-label="ย้อนกลับ"
+                title="กลับหน้าแรก"
+                className="shrink-0 rounded-xl border border-zinc-200 bg-white p-0 -ml-30"
               >
-                ←
+                <img
+                  src="/App logo.jpg"
+                  alt="App logo"
+                  className="h-12 w-12 rounded-xl object-cover"
+                />
               </button>
               <div className="font-semibold">สินค้าที่ลงขาย</div>
             </div>
 
-            {products.length ? (
-              <button
-                className="rounded-xl border border-zinc-200 px-4 py-2 text-sm font-medium"
-                onClick={this.openCreatePopup}
-              >
-                + เพิ่มสินค้า
-              </button>
-            ) : (
-              <div className="w-8" />
-            )}
+            <div className="flex items-center gap-2">
+              {products.length ? (
+                <button
+                  className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-medium"
+                  onClick={this.openCreatePopup}
+                >
+                  + เพิ่มสินค้า
+                </button>
+              ) : null}
+            </div>
           </div>
         </div>
 

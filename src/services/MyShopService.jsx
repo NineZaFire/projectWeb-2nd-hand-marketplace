@@ -47,6 +47,17 @@ export class MyShopService {
     return { products };
   }
 
+  // โครง backend: GET /api/products/:id (ดึงข้อมูลสินค้าเดี่ยวจาก database)
+  async getMarketplaceProductById(productId) {
+    const normalizedId = `${productId ?? ""}`.trim();
+    if (!normalizedId) return { product: null };
+
+    const result = await this.http.get(`/api/products/${encodeURIComponent(normalizedId)}`);
+    return {
+      product: result?.product ? ShopProduct.fromJSON(result.product) : null,
+    };
+  }
+
   // โครง backend: GET /api/products/search?keyword=... (ค้นหาสินค้าจาก database ด้วยความเหมือนชื่อสินค้า)
   async searchMarketplaceProducts(keyword) {
     const normalizedKeyword = (keyword ?? "").trim();
@@ -103,6 +114,21 @@ export class MyShopService {
 
     return {
       product: result?.product ? ShopProduct.fromJSON(result.product) : null,
+    };
+  }
+
+  // โครง backend: POST /api/chats (สร้างห้องแชทกับร้านค้าและเก็บลง database)
+  async startProductChat({ productId, ownerId, message } = {}) {
+    const result = await this.http.post("/api/chats", {
+      productId,
+      ownerId,
+      message: (message ?? "").trim(),
+    });
+
+    return {
+      chatId: result?.chatId ?? result?.chat?.id ?? "",
+      chat: result?.chat ?? null,
+      message: result?.message ?? "สร้างห้องแชทแล้ว",
     };
   }
 }

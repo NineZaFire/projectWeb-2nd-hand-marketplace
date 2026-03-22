@@ -87,27 +87,18 @@ export class SearchProductsPage extends React.Component {
       <div className="min-h-dvh bg-zinc-50">
         <div className="sticky top-0 z-40 bg-[#A4E3D8] border-b border-zinc-200">
           <div className="mx-auto max-w-350 px-4 py-5 flex items-center gap-4">
-            <button
-              type="button"
-              onClick={this.props.onBack}
-              title="กลับหน้าแรก"
-              className="h-10 w-10 rounded-xl bg-[#F4D03E] border border-zinc-200 grid place-items-center text-lg"
-            >
-              ←
-            </button>
-
-            <button
-              type="button"
-              onClick={this.props.onGoHome}
-              title="กลับหน้าแรก"
-              className="shrink-0 rounded-xl border border-zinc-200 bg-white p-0"
-            >
-              <img
-                src="/App logo.jpg"
-                alt="App logo"
-                className="h-20 w-20 rounded-xl object-cover"
-              />
-            </button>
+          <button
+            type="button"
+            onClick={this.props.onGoHome}
+            title="กลับหน้าแรก"
+            className="shrink-0 rounded-xl border border-zinc-200 bg-white p-0"
+          >
+            <img
+              src="/App logo.jpg"
+              alt="App logo"
+              className="h-20 w-20 rounded-xl object-cover"
+            />
+          </button>
 
             <form className="flex-1" onSubmit={this.onSubmitSearch}>
               <input

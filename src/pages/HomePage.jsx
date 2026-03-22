@@ -328,7 +328,11 @@ export class HomePage extends React.Component {
               {!loadingProducts && filteredProducts.length ? (
                 <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
                   {filteredProducts.map((product, index) => (
-                    <HomeProductCard key={product.id || `${product.name}-${index}`} product={product} />
+                    <HomeProductCard
+                      key={product.id || `${product.name}-${index}`}
+                      product={product}
+                      onOpenProduct={this.props.onOpenProduct}
+                    />
                   ))}
                 </div>
               ) : null}
@@ -426,7 +430,7 @@ class HomeBanner extends React.Component {
 
 class HomeProductCard extends React.Component {
   render() {
-    const { product } = this.props;
+    const { product, onOpenProduct } = this.props;
     return (
       <article className="rounded-2xl border border-zinc-200 p-3 bg-white">
         <div className="aspect-square rounded-xl bg-zinc-100 overflow-hidden grid place-items-center">
@@ -442,6 +446,13 @@ class HomeProductCard extends React.Component {
             {ProductCategory.getLabel(product?.category)}
           </div>
           <div className="text-sm font-medium text-zinc-700">{product?.getPriceLabel?.() ?? "฿0.00"}</div>
+          <button
+            type="button"
+            className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+            onClick={() => onOpenProduct?.(product)}
+          >
+            ดูสินค้า
+          </button>
         </div>
       </article>
     );
@@ -471,18 +482,10 @@ class CartPopup extends React.Component {
           className="absolute right-5 top-23 w-[28rem] max-w-[calc(100vw-2rem)]"
           onClick={this.stop}
         >
-          <div className="absolute -top-1.5 right-21 h-3 w-3 rotate-45 bg-white border-l border-t border-zinc-200" />
-          <div className="rounded-3xl border border-zinc-200 bg-white shadow-xl p-4 space-y-4">
+        <div className="rounded-3xl border border-zinc-200 bg-white shadow-xl p-4 space-y-4">
             <div className="flex items-center justify-between">
               <div className="text-base font-semibold text-zinc-900">ตะกร้าสินค้า</div>
-              <button
-                type="button"
-                className="h-8 w-8 rounded-lg border border-zinc-200 grid place-items-center text-zinc-700"
-                onClick={onClose}
-                title="ปิด"
-              >
-                ✕
-              </button>
+              
             </div>
 
             {loading ? <div className="text-sm text-zinc-500">กำลังโหลดตะกร้าสินค้า...</div> : null}
@@ -582,8 +585,7 @@ class ProfilePopup extends React.Component {
     return (
       <div className="fixed inset-0 z-50" onClick={onClose}>
         <div className="absolute right-5 top-23 w-[20rem] max-w-[calc(100vw-2rem)]" onClick={this.stop}>
-          <div className="absolute -top-1.5 right-19 h-3 w-3 rotate-45 bg-white border-l border-t border-zinc-200" />
-          <div className="rounded-3xl border border-zinc-200 bg-white shadow-xl p-4 space-y-4">
+        <div className="rounded-3xl border border-zinc-200 bg-white shadow-xl p-4 space-y-4">
             <div className="rounded-2xl bg-zinc-50 p-3">
               <div className="flex items-center gap-3">
                 <div className="h-12 w-12 rounded-full bg-zinc-200 overflow-hidden grid place-items-center">

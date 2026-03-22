@@ -65,15 +65,19 @@ export class LoginPage extends React.Component {
     const { identifier, password, loading, error } = this.state;
 
     return (
-      <div className="min-h-dvh grid place-items-center bg-zinc-50 p-4">
+      <div className="min-h-dvh grid place-items-center bg-[#A4E3D8] p-4">
         {/* คง layout เดิม: การ์ดตรงกลาง */}
         <form
           onSubmit={this.onSubmit}
-          className="w-full max-w-md rounded-2xl bg-white shadow p-6 space-y-5"
+          className="w-full max-w-md rounded-2xl bg-white shadow p-10 space-y-8"
         >
-          {/* พื้นที่โลโก้ (ย่อขนาดลงตามภาพที่ส่งมา) */}
+          {/* พื้นที่โลโก้ */}
           <div className="grid place-items-center">
-            <div className="h-24 w-24 rounded-xl bg-zinc-300" />
+            <img
+                src="/App logo.jpg"
+                alt="App logo"
+                className="h-30 w-30 rounded-xl object-cover"
+              />
           </div>
 
           <div className="space-y-2">
@@ -115,50 +119,7 @@ export class LoginPage extends React.Component {
               {loading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
             </button>
           </div>
-
-          {/* Divider: เส้น + หรือ */}
-          <div className="flex items-center gap-3">
-            <div className="h-px flex-1 bg-zinc-300" />
-            <div className="text-sm text-zinc-600">หรือ</div>
-            <div className="h-px flex-1 bg-zinc-300" />
-          </div>
-
-          {/* Social buttons */}
-          <div className="space-y-3">
-            <button
-              type="button"
-              className={this.socialBtnClass}
-              onClick={() => this.onSocialLogin("facebook")}
-            >
-              <span className="h-9 w-9 rounded-full bg-white grid place-items-center text-blue-600 font-bold">
-                f
-              </span>
-              <span>เข้าสู่ระบบด้วย Facebook</span>
-            </button>
-
-            <button
-              type="button"
-              className={this.socialBtnClass}
-              onClick={() => this.onSocialLogin("google")}
-            >
-              <span className="h-9 w-9 rounded-full bg-white grid place-items-center font-bold">
-                G
-              </span>
-              <span>เข้าสู่ระบบด้วย Google</span>
-            </button>
-
-            <button
-              type="button"
-              className={this.socialBtnClass}
-              onClick={() => this.onSocialLogin("apple")}
-            >
-              <span className="h-9 w-9 rounded-full bg-white grid place-items-center font-bold">
-                
-              </span>
-              <span>เข้าสู่ระบบด้วย Apple</span>
-            </button>
-          </div>
-
+          
           {/* สมัครบัญชี */}
           <div className="text-center text-sm text-zinc-700">
             ยังไม่มีบัญชีผู้ใช้?{" "}

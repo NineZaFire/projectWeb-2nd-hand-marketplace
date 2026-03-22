@@ -18,36 +18,125 @@ export default class App extends React.Component {
   };
 
   auth = AuthService.instance();
+  appRoutes = new Set(["login", "register", "home", "myshop", "product", "search"]);
 
   async componentDidMount() {
+    if (typeof window !== "undefined") {
+      window.addEventListener("popstate", this.onPopState);
+    }
+
+    let nextUser = this.state.user;
+    let nextRoute = this.state.route;
+
     try {
       const me = await this.auth.me?.();
-      if (me?.user) this.setState({ user: me.user, route: "home" });
+      if (me?.user) {
+        nextUser = me.user;
+        nextRoute = "home";
+      }
     } catch {
       // ignore
     } finally {
-      this.setState({ booting: false });
+      this.setState(
+        {
+          user: nextUser,
+          route: nextRoute,
+          booting: false,
+        },
+        () => {
+          this.syncHistoryEntry({ replace: true });
+        },
+      );
     }
   }
 
-  go = (route) => this.setState({ route });
+  componentWillUnmount() {
+    if (typeof window !== "undefined") {
+      window.removeEventListener("popstate", this.onPopState);
+    }
+  }
 
-  onLoggedIn = (user) => this.setState({ user, route: "home" });
+  onPopState = (event) => {
+    const historyState = event?.state;
+    const route = historyState?.route;
+    if (!this.appRoutes.has(route)) return;
 
-  onRegistered = () => this.setState({ route: "login" });
+    this.setState({
+      route,
+      selectedProduct: historyState?.selectedProduct ?? null,
+      searchKeyword: historyState?.searchKeyword ?? "",
+    });
+  };
+
+  syncHistoryEntry = ({ replace = false } = {}) => {
+    if (typeof window === "undefined") return;
+
+    const method = replace ? "replaceState" : "pushState";
+    const safePayload = {
+      route: this.state.route,
+      selectedProduct: this.state.selectedProduct ? { ...this.state.selectedProduct } : null,
+      searchKeyword: this.state.searchKeyword ?? "",
+    };
+
+    try {
+      window.history[method](safePayload, "", window.location.href);
+    } catch {
+      window.history[method](
+        {
+          route: safePayload.route,
+          selectedProduct: null,
+          searchKeyword: safePayload.searchKeyword,
+        },
+        "",
+        window.location.href,
+      );
+    }
+  };
+
+  navigate = (route, { patch = {}, replace = false } = {}) => {
+    if (!this.appRoutes.has(route)) return;
+
+    const hasSelectedProduct = Object.prototype.hasOwnProperty.call(patch, "selectedProduct");
+    const hasSearchKeyword = Object.prototype.hasOwnProperty.call(patch, "searchKeyword");
+
+    this.setState(
+      {
+        ...patch,
+        route,
+        selectedProduct: hasSelectedProduct ? patch.selectedProduct : this.state.selectedProduct,
+        searchKeyword: hasSearchKeyword ? patch.searchKeyword : this.state.searchKeyword,
+      },
+      () => {
+        this.syncHistoryEntry({ replace });
+      },
+    );
+  };
+
+  go = (route) => this.navigate(route);
+
+  onLoggedIn = (user) => this.navigate("home", { patch: { user, selectedProduct: null } });
+
+  onRegistered = () => this.navigate("login");
 
   // ✅ HomePage เรียกกลับมาเมื่อแก้โปรไฟล์สำเร็จ
   onUpdatedUser = (user) => this.setState({ user });
-  onGoMyShop = () => this.setState({ route: "myshop" });
-  onBackHome = () => this.setState({ route: "home", selectedProduct: null });
-  onOpenProduct = (product) => this.setState({ route: "product", selectedProduct: product ?? null });
-  onOpenSearch = (keyword) => this.setState({ route: "search", searchKeyword: keyword ?? "" });
+  onGoMyShop = () => this.navigate("myshop");
+  onBackHome = () => this.navigate("home", { patch: { selectedProduct: null } });
+  onOpenProduct = (product) => this.navigate("product", { patch: { selectedProduct: product ?? null } });
+  onOpenSearch = (keyword) =>
+    this.navigate("search", { patch: { searchKeyword: keyword ?? "", selectedProduct: null } });
 
   onLogout = async () => {
     try {
       await this.auth.logout?.();
     } finally {
-      this.setState({ user: null, route: "login" });
+      this.navigate("login", {
+        patch: {
+          user: null,
+          selectedProduct: null,
+          searchKeyword: "",
+        },
+      });
     }
   };
 
@@ -55,8 +144,8 @@ export default class App extends React.Component {
     const { route, user, selectedProduct, searchKeyword, booting } = this.state;
     if (booting) return null;
 
-    // guard
-    if (route === "home" && !user) {
+    // guard (ป้องกันผู้ใช้ที่ยังไม่ login เข้าหน้าในระบบผ่าน browser back)
+    if (!user && !["login", "register"].includes(route)) {
       return (
         <LoginPage
           onGoRegister={() => this.go("register")}
@@ -88,7 +177,15 @@ export default class App extends React.Component {
     }
 
     if (route === "product") {
-      return <ProductDetailPage product={selectedProduct} onBack={this.onBackHome} />;
+      return (
+        <ProductDetailPage
+          product={selectedProduct}
+          onGoHome={this.onBackHome}
+          onSubmitSearch={this.onOpenSearch}
+          onCart={() => console.log("cart")}
+          onToggleMenu={() => console.log("menu")}
+        />
+      );
     }
 
     if (route === "search") {
