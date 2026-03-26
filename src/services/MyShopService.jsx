@@ -117,6 +117,63 @@ export class MyShopService {
     };
   }
 
+  // โครง backend: PATCH /api/myshop/products/:productId (แก้ไขสินค้าเดิม)
+  async updateProduct(productId, payload, imageFiles) {
+    const normalizedId = `${productId ?? ""}`.trim();
+    if (!normalizedId) throw new Error("ไม่พบรหัสสินค้าที่ต้องการแก้ไข");
+
+    const formData = new FormData();
+    Object.entries(payload ?? {}).forEach(([key, value]) => {
+      formData.append(key, value ?? "");
+    });
+
+    const files = Array.isArray(imageFiles)
+      ? imageFiles.filter(Boolean)
+      : imageFiles
+        ? [imageFiles]
+        : [];
+
+    files.forEach((file) => {
+      formData.append("images", file);
+    });
+    if (files.length === 1) {
+      formData.append("image", files[0]);
+    }
+
+    const endpoint = `/api/myshop/products/${encodeURIComponent(normalizedId)}`;
+
+    try {
+      const result = await this.http.request(endpoint, {
+        method: "PATCH",
+        body: formData,
+      });
+
+      return {
+        product: result?.product ? ShopProduct.fromJSON(result.product) : null,
+      };
+    } catch {
+      const fallback = await this.http.request(endpoint, {
+        method: "PUT",
+        body: formData,
+      });
+
+      return {
+        product: fallback?.product ? ShopProduct.fromJSON(fallback.product) : null,
+      };
+    }
+  }
+
+  // โครง backend: DELETE /api/myshop/products/:productId (ลบสินค้า)
+  async deleteProduct(productId) {
+    const normalizedId = `${productId ?? ""}`.trim();
+    if (!normalizedId) throw new Error("ไม่พบรหัสสินค้าที่ต้องการลบ");
+
+    await this.http.request(`/api/myshop/products/${encodeURIComponent(normalizedId)}`, {
+      method: "DELETE",
+    });
+    return true;
+  }
+
   // โครง backend: POST /api/chats (สร้างห้องแชทกับร้านค้าและเก็บลง database)
   async startProductChat({ productId, ownerId, message } = {}) {
     const result = await this.http.post("/api/chats", {

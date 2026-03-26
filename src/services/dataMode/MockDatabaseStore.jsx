@@ -851,6 +851,88 @@ export class MockDatabaseStore {
     };
   }
 
+  updateMyProduct(productId, payloadInput = {}) {
+    const user = this.#requireCurrentUser();
+    const normalizedProductId = safeText(productId);
+    if (!normalizedProductId) throw new Error("ไม่พบรหัสสินค้าที่ต้องการแก้ไข");
+
+    const payload = toPayloadObject(payloadInput);
+    const product = this.state.products.find((item) => item.id === normalizedProductId);
+    if (!product) throw new Error("ไม่พบสินค้าที่ต้องการแก้ไข");
+    if (safeText(product.ownerId) !== safeText(user.id)) {
+      throw new Error("คุณไม่มีสิทธิ์แก้ไขสินค้านี้");
+    }
+
+    const hasName = Object.prototype.hasOwnProperty.call(payload, "name");
+    const hasCategory = Object.prototype.hasOwnProperty.call(payload, "category");
+    const hasPrice = Object.prototype.hasOwnProperty.call(payload, "price");
+    const hasDescription = Object.prototype.hasOwnProperty.call(payload, "description");
+    const hasImageInput = ["image", "images", "imageUrl", "imageUrls"].some((key) =>
+      Object.prototype.hasOwnProperty.call(payload, key),
+    );
+
+    if (hasName) {
+      const nextName = safeText(payload.name);
+      if (!nextName) throw new Error("กรุณากรอกชื่อสินค้า");
+      product.name = nextName;
+    }
+
+    if (hasCategory) {
+      const nextCategory = safeText(payload.category);
+      if (!nextCategory) throw new Error("กรุณาเลือกหมวดหมู่สินค้า");
+      product.category = nextCategory;
+    }
+
+    if (hasPrice) {
+      const nextPrice = Math.max(0, toNumber(payload.price, 0));
+      if (nextPrice <= 0) throw new Error("กรุณากรอกราคาสินค้าให้มากกว่า 0");
+      product.price = nextPrice;
+    }
+
+    if (hasDescription) {
+      product.description = safeText(payload.description);
+    }
+
+    if (hasImageInput) {
+      const imageUrls = this.#normalizeProductImageUrls(payload);
+      product.imageUrls = imageUrls;
+      product.imageUrl = imageUrls[0] ?? buildFallbackImageUrl("product", "product");
+    }
+
+    this.#persist();
+
+    return {
+      product: this.#toProductResponse(product),
+    };
+  }
+
+  deleteMyProduct(productId) {
+    const user = this.#requireCurrentUser();
+    const normalizedProductId = safeText(productId);
+    if (!normalizedProductId) throw new Error("ไม่พบรหัสสินค้าที่ต้องการลบ");
+
+    const productIndex = this.state.products.findIndex(
+      (item) => item.id === normalizedProductId && safeText(item.ownerId) === safeText(user.id),
+    );
+    if (productIndex < 0) throw new Error("ไม่พบสินค้าที่ต้องการลบ");
+
+    this.state.products.splice(productIndex, 1);
+
+    this.state.carts = (Array.isArray(this.state.carts) ? this.state.carts : []).map((cart) => ({
+      ...cart,
+      items: (Array.isArray(cart?.items) ? cart.items : []).filter(
+        (item) => safeText(item?.productId) !== normalizedProductId,
+      ),
+    }));
+
+    this.state.chats = (Array.isArray(this.state.chats) ? this.state.chats : []).filter(
+      (chat) => safeText(chat?.productId) !== normalizedProductId,
+    );
+
+    this.#persist();
+    return { ok: true };
+  }
+
   startProductChat(payloadInput = {}) {
     const requester = this.#requireCurrentUser();
     const payload = toPayloadObject(payloadInput);

@@ -8,14 +8,21 @@ export class MyShopPage extends React.Component {
   state = {
     loading: true,
     saving: false,
+    deleting: false,
     error: "",
     done: "",
     products: [],
     showCreatePopup: false,
+    showEditPopup: false,
+    showDeleteConfirmPopup: false,
     showProfilePopup: false,
     draftProduct: ShopProduct.empty(),
+    editDraftProduct: ShopProduct.empty(),
+    deletingProduct: null,
     imageFiles: [],
     imagePreviewUrls: [],
+    editImageFiles: [],
+    editImagePreviewUrls: [],
   };
 
   myShopService = MyShopService.instance();
@@ -25,13 +32,13 @@ export class MyShopPage extends React.Component {
   }
 
   componentWillUnmount() {
-    this.revokePreviewUrls();
+    this.revokePreviewUrls(this.state.imagePreviewUrls);
+    this.revokePreviewUrls(this.state.editImagePreviewUrls);
   }
 
-  revokePreviewUrls = () => {
+  revokePreviewUrls = (previewUrls = []) => {
     if (typeof URL === "undefined") return;
-    const previewUrls = this.state.imagePreviewUrls ?? [];
-    previewUrls.forEach((url) => {
+    (Array.isArray(previewUrls) ? previewUrls : []).forEach((url) => {
       try {
         URL.revokeObjectURL(url);
       } catch {
@@ -57,9 +64,10 @@ export class MyShopPage extends React.Component {
   };
 
   openCreatePopup = () => {
-    this.revokePreviewUrls();
+    this.revokePreviewUrls(this.state.imagePreviewUrls);
     this.setState({
       showCreatePopup: true,
+      showEditPopup: false,
       draftProduct: ShopProduct.empty(),
       imageFiles: [],
       imagePreviewUrls: [],
@@ -69,7 +77,7 @@ export class MyShopPage extends React.Component {
   };
 
   closeCreatePopup = () => {
-    this.revokePreviewUrls();
+    this.revokePreviewUrls(this.state.imagePreviewUrls);
     this.setState({
       showCreatePopup: false,
       draftProduct: ShopProduct.empty(),
@@ -102,7 +110,7 @@ export class MyShopPage extends React.Component {
 
   setImageFiles = (files) => {
     const safeFiles = Array.isArray(files) ? files.filter(Boolean) : [];
-    this.revokePreviewUrls();
+    this.revokePreviewUrls(this.state.imagePreviewUrls);
 
     const imagePreviewUrls =
       typeof URL === "undefined"
@@ -115,6 +123,148 @@ export class MyShopPage extends React.Component {
       error: "",
       done: "",
     });
+  };
+
+  openEditPopup = (productInput) => {
+    const product =
+      productInput instanceof ShopProduct
+        ? productInput
+        : ShopProduct.fromJSON(productInput ?? {});
+
+    this.revokePreviewUrls(this.state.editImagePreviewUrls);
+    this.setState({
+      showEditPopup: true,
+      showCreatePopup: false,
+      editDraftProduct: product,
+      editImageFiles: [],
+      editImagePreviewUrls: [],
+      error: "",
+      done: "",
+    });
+  };
+
+  closeEditPopup = () => {
+    this.revokePreviewUrls(this.state.editImagePreviewUrls);
+    this.setState({
+      showEditPopup: false,
+      editDraftProduct: ShopProduct.empty(),
+      editImageFiles: [],
+      editImagePreviewUrls: [],
+      error: "",
+    });
+  };
+
+  setEditDraftField = (key, value) => {
+    this.setState((s) => ({
+      editDraftProduct: s.editDraftProduct.withPatch({ [key]: value }),
+      error: "",
+      done: "",
+    }));
+  };
+
+  setEditImageFiles = (files) => {
+    const safeFiles = Array.isArray(files) ? files.filter(Boolean) : [];
+    this.revokePreviewUrls(this.state.editImagePreviewUrls);
+
+    const editImagePreviewUrls =
+      typeof URL === "undefined"
+        ? []
+        : safeFiles.map((file) => URL.createObjectURL(file));
+
+    this.setState({
+      editImageFiles: safeFiles,
+      editImagePreviewUrls,
+      error: "",
+      done: "",
+    });
+  };
+
+  submitEditProduct = async () => {
+    const { editDraftProduct, editImageFiles } = this.state;
+    const validationError = editDraftProduct.validate({ imageFiles: editImageFiles });
+    if (validationError) {
+      this.setState({ error: validationError });
+      return;
+    }
+
+    this.setState({ saving: true, error: "", done: "" });
+    try {
+      const { product } = await this.myShopService.updateProduct(
+        editDraftProduct.id,
+        editDraftProduct.toPayload(),
+        editImageFiles,
+      );
+
+      this.revokePreviewUrls(this.state.editImagePreviewUrls);
+      if (product) {
+        this.setState((s) => ({
+          products: s.products.map((item) => (item.id === product.id ? product : item)),
+          showEditPopup: false,
+          editDraftProduct: ShopProduct.empty(),
+          editImageFiles: [],
+          editImagePreviewUrls: [],
+          done: "แก้ไขสินค้าเรียบร้อย",
+        }));
+      } else {
+        const { products } = await this.myShopService.listProducts();
+        this.setState({
+          products: products ?? [],
+          showEditPopup: false,
+          editDraftProduct: ShopProduct.empty(),
+          editImageFiles: [],
+          editImagePreviewUrls: [],
+          done: "แก้ไขสินค้าเรียบร้อย",
+        });
+      }
+    } catch (e) {
+      this.setState({ error: e?.message ?? "แก้ไขสินค้าไม่สำเร็จ" });
+    } finally {
+      this.setState({ saving: false });
+    }
+  };
+
+  openDeleteConfirmPopup = (productInput) => {
+    const product =
+      productInput instanceof ShopProduct
+        ? productInput
+        : ShopProduct.fromJSON(productInput ?? {});
+
+    this.setState({
+      deletingProduct: product,
+      showDeleteConfirmPopup: true,
+      error: "",
+      done: "",
+    });
+  };
+
+  closeDeleteConfirmPopup = () => {
+    this.setState({
+      deletingProduct: null,
+      showDeleteConfirmPopup: false,
+    });
+  };
+
+  confirmDeleteProduct = async () => {
+    const deletingProductId = `${this.state.deletingProduct?.id ?? ""}`.trim();
+    if (!deletingProductId) {
+      this.closeDeleteConfirmPopup();
+      return;
+    }
+
+    this.setState({ deleting: true, error: "", done: "" });
+    try {
+      await this.myShopService.deleteProduct(deletingProductId);
+      this.setState((s) => ({
+        products: s.products.filter((item) => item.id !== deletingProductId),
+        deletingProduct: null,
+        showDeleteConfirmPopup: false,
+        done: "ลบสินค้าเรียบร้อย",
+      }));
+    } catch (e) {
+      this.setState({ error: e?.message ?? "ลบสินค้าไม่สำเร็จ" });
+    } finally {
+      this.setState({ deleting: false });
+    }
   };
 
   submitProduct = async () => {
@@ -133,7 +283,7 @@ export class MyShopPage extends React.Component {
       );
 
       if (product) {
-        this.revokePreviewUrls();
+        this.revokePreviewUrls(this.state.imagePreviewUrls);
         this.setState((s) => ({
           products: [product, ...s.products],
           showCreatePopup: false,
@@ -144,7 +294,7 @@ export class MyShopPage extends React.Component {
         }));
       } else {
         const { products } = await this.myShopService.listProducts();
-        this.revokePreviewUrls();
+        this.revokePreviewUrls(this.state.imagePreviewUrls);
         this.setState({
           products: products ?? [],
           showCreatePopup: false,
@@ -181,7 +331,12 @@ export class MyShopPage extends React.Component {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {products.map((product, index) => (
-          <ProductCard key={product.id || `${product.name}-${index}`} product={product} />
+          <ProductCard
+            key={product.id || `${product.name}-${index}`}
+            product={product}
+            onEditProduct={this.openEditPopup}
+            onDeleteProduct={this.openDeleteConfirmPopup}
+          />
         ))}
       </div>
     );
@@ -192,14 +347,21 @@ export class MyShopPage extends React.Component {
     const {
       loading,
       saving,
+      deleting,
       error,
       done,
       products,
       showCreatePopup,
+      showEditPopup,
+      showDeleteConfirmPopup,
       showProfilePopup,
       draftProduct,
+      editDraftProduct,
+      deletingProduct,
       imageFiles,
       imagePreviewUrls,
+      editImageFiles,
+      editImagePreviewUrls,
     } = this.state;
 
     return (
@@ -270,7 +432,7 @@ export class MyShopPage extends React.Component {
             </div>
 
             {loading ? <div className="text-sm text-zinc-500">กำลังโหลด...</div> : null}
-            {error && !showCreatePopup ? (
+            {error && !showCreatePopup && !showEditPopup ? (
               <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</div>
             ) : null}
             {done ? <div className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-700">{done}</div> : null}
@@ -290,6 +452,29 @@ export class MyShopPage extends React.Component {
             onChangeField={this.setDraftField}
             onChangeImageFiles={this.setImageFiles}
             onSubmit={this.submitProduct}
+          />
+        ) : null}
+
+        {showEditPopup ? (
+          <EditProductModal
+            draftProduct={editDraftProduct}
+            imageFiles={editImageFiles}
+            imagePreviewUrls={editImagePreviewUrls}
+            saving={saving}
+            error={error}
+            onClose={this.closeEditPopup}
+            onChangeField={this.setEditDraftField}
+            onChangeImageFiles={this.setEditImageFiles}
+            onSubmit={this.submitEditProduct}
+          />
+        ) : null}
+
+        {showDeleteConfirmPopup ? (
+          <DeleteProductConfirmModal
+            product={deletingProduct}
+            deleting={deleting}
+            onCancel={this.closeDeleteConfirmPopup}
+            onConfirmDelete={this.confirmDeleteProduct}
           />
         ) : null}
 
@@ -322,7 +507,7 @@ class ProductCard extends React.Component {
   };
 
   render() {
-    const { product } = this.props;
+    const { product, onEditProduct, onDeleteProduct } = this.props;
     const imageUrls = product?.getImageUrls?.() ?? (product?.imageUrl ? [product.imageUrl] : []);
     const activeImage = imageUrls[this.state.activeImageIndex] ?? imageUrls[0] ?? "";
 
@@ -356,7 +541,27 @@ class ProductCard extends React.Component {
         ) : null}
 
         <div className="pt-3 space-y-1">
-          <div className="font-semibold break-words">{product.name || "ไม่ระบุชื่อสินค้า"}</div>
+          <div className="flex items-start justify-between gap-2">
+            <div className="font-semibold break-words">{product.name || "ไม่ระบุชื่อสินค้า"}</div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                className="h-8 w-8 shrink-0 rounded-lg border border-zinc-200 bg-white grid place-items-center hover:bg-zinc-50"
+                onClick={() => onEditProduct?.(product)}
+                title="แก้ไขสินค้า"
+              >
+                <img src="/edit.svg" alt="edit" className="h-4 w-4 object-contain" />
+              </button>
+              <button
+                type="button"
+                className="h-8 w-8 shrink-0 rounded-lg border border-red-200 bg-white grid place-items-center hover:bg-red-50"
+                onClick={() => onDeleteProduct?.(product)}
+                title="ลบสินค้า"
+              >
+                <img src="/delete.svg" alt="delete" className="h-4 w-4 object-contain" />
+              </button>
+            </div>
+          </div>
           <div className="inline-flex w-fit rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-700">
             {ProductCategory.getLabel(product.category)}
           </div>
@@ -506,6 +711,206 @@ class CreateProductModal extends React.Component {
             </button>
           </div>
         </form>
+      </div>
+    );
+  }
+}
+
+class EditProductModal extends React.Component {
+  stop = (e) => e.stopPropagation();
+
+  onSubmit = (e) => {
+    e.preventDefault();
+    this.props.onSubmit?.();
+  };
+
+  render() {
+    const {
+      draftProduct,
+      imageFiles,
+      imagePreviewUrls,
+      saving,
+      error,
+      onClose,
+      onChangeField,
+      onChangeImageFiles,
+    } = this.props;
+
+    const existingImageUrls = draftProduct?.getImageUrls?.() ?? [];
+
+    return (
+      <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={onClose}>
+        <form
+          className="w-full max-w-2xl rounded-3xl bg-white shadow p-4 md:p-6 space-y-4"
+          onClick={this.stop}
+          onSubmit={this.onSubmit}
+        >
+          <div className="flex items-center justify-between">
+            <div className="text-xl md:text-2xl font-semibold">แก้ไขสินค้า</div>
+            <button
+              type="button"
+              className="h-10 w-10 rounded-xl border border-zinc-200 grid place-items-center"
+              onClick={onClose}
+              title="ปิด"
+            >
+              ✕
+            </button>
+          </div>
+
+          {error ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
+          ) : null}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label className="space-y-1">
+              <div className="text-sm text-zinc-600">ชื่อสินค้า</div>
+              <input
+                className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none"
+                value={draftProduct.name}
+                onChange={(e) => onChangeField?.("name", e.target.value)}
+              />
+            </label>
+
+            <label className="space-y-1">
+              <div className="text-sm text-zinc-600">หมวดหมู่สินค้า</div>
+              <select
+                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none"
+                value={draftProduct.category}
+                onChange={(e) => onChangeField?.("category", e.target.value)}
+              >
+                <option value="">เลือกหมวดหมู่</option>
+                {ProductCategory.list().map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-1">
+              <div className="text-sm text-zinc-600">ราคาสินค้า</div>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none"
+                value={draftProduct.price}
+                onChange={(e) => onChangeField?.("price", e.target.value)}
+              />
+            </label>
+
+            <label className="space-y-1 md:col-span-2">
+              <div className="text-sm text-zinc-600">เปลี่ยนรูปภาพสินค้า (ไม่เลือก = ใช้รูปเดิม)</div>
+              <input
+                type="file"
+                multiple
+                accept="image/*"
+                className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5"
+                onChange={(e) => onChangeImageFiles?.(Array.from(e.target.files ?? []))}
+              />
+              {imageFiles?.length ? (
+                <div className="text-xs text-zinc-500">เลือกแล้ว {imageFiles.length} รูป (จะแทนที่รูปเดิม)</div>
+              ) : null}
+
+              {!imageFiles?.length && existingImageUrls.length ? (
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                  {existingImageUrls.map((url, index) => (
+                    <div
+                      key={`existing-${index}`}
+                      className="aspect-square rounded-lg overflow-hidden border border-zinc-200 bg-zinc-100"
+                    >
+                      <img src={url} alt={`existing-${index + 1}`} className="h-full w-full object-cover" />
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {imagePreviewUrls?.length ? (
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                  {imagePreviewUrls.map((previewUrl, index) => (
+                    <div
+                      key={`preview-edit-${index}`}
+                      className="aspect-square rounded-lg overflow-hidden border border-zinc-200 bg-zinc-100"
+                    >
+                      <img src={previewUrl} alt={`preview-edit-${index + 1}`} className="h-full w-full object-cover" />
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </label>
+
+            <label className="space-y-1 md:col-span-2">
+              <div className="text-sm text-zinc-600">คำอธิบายสินค้า</div>
+              <textarea
+                className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none min-h-28"
+                value={draftProduct.description}
+                onChange={(e) => onChangeField?.("description", e.target.value)}
+              />
+            </label>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              className="rounded-xl border border-zinc-200 px-4 py-2 font-medium"
+              onClick={onClose}
+              disabled={saving}
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="submit"
+              className="rounded-xl bg-zinc-900 text-white px-4 py-2 font-semibold disabled:opacity-60"
+              disabled={saving}
+            >
+              {saving ? "กำลังบันทึก..." : "บันทึกการแก้ไข"}
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  }
+}
+
+class DeleteProductConfirmModal extends React.Component {
+  stop = (e) => e.stopPropagation();
+
+  render() {
+    const { product, deleting, onCancel, onConfirmDelete } = this.props;
+
+    return (
+      <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={onCancel}>
+        <div
+          className="w-full max-w-md rounded-3xl bg-white shadow p-5 space-y-4"
+          onClick={this.stop}
+        >
+          <div className="text-lg font-semibold text-zinc-900">ยืนยันการลบสินค้า</div>
+          <div className="text-sm text-zinc-600">
+            จะลบสินค้านี้จริงๆ ใช่ไหม
+          </div>
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700 break-words">
+            {product?.name || "ไม่ระบุชื่อสินค้า"}
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              className="rounded-xl border border-zinc-200 px-4 py-2 text-sm font-medium"
+              onClick={onCancel}
+              disabled={deleting}
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="button"
+              className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              onClick={onConfirmDelete}
+              disabled={deleting}
+            >
+              {deleting ? "กำลังลบ..." : "ลบ"}
+            </button>
+          </div>
+        </div>
       </div>
     );
   }

@@ -54,6 +54,17 @@ export class MockApiRouter {
     if (normalizedMethod === "POST" && pathname === "/api/myshop/products") {
       return this.store.createProduct(body);
     }
+    if (
+      (normalizedMethod === "PATCH" || normalizedMethod === "PUT") &&
+      pathname.startsWith("/api/myshop/products/")
+    ) {
+      const rawProductId = pathname.slice("/api/myshop/products/".length);
+      return this.store.updateMyProduct(decodeURIComponent(rawProductId), body);
+    }
+    if (normalizedMethod === "DELETE" && pathname.startsWith("/api/myshop/products/")) {
+      const rawProductId = pathname.slice("/api/myshop/products/".length);
+      return this.store.deleteMyProduct(decodeURIComponent(rawProductId));
+    }
 
     // ---------- Products ----------
     if (normalizedMethod === "GET" && pathname === "/api/products/search") {
