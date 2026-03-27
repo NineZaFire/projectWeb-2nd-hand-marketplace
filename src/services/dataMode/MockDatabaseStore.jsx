@@ -1,11 +1,8 @@
+import { ShippingMethod } from "../../models/ShippingMethod";
+
 const MOCK_DB_STORAGE_KEY = "myweb:mock-db:v1";
 const DEFAULT_AVATAR_URL = "/App logo.jpg";
 const DEFAULT_PRODUCT_IMAGE_URL = "/vite.svg";
-
-const deepClone = (value) => {
-  if (typeof structuredClone === "function") return structuredClone(value);
-  return JSON.parse(JSON.stringify(value));
-};
 
 const nowIso = () => new Date().toISOString();
 
@@ -81,17 +78,75 @@ const toPayloadObject = (payload) => {
   return {};
 };
 
+const tryParseJson = (value, fallback = null) => {
+  if (typeof value !== "string") return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+};
+
+const normalizeShopProfileRecord = (shopInput = {}) => {
+  const shop = shopInput && typeof shopInput === "object" ? shopInput : {};
+  return {
+    id: safeText(shop.id ?? shop._id) || createId("shop"),
+    ownerId: safeText(shop.ownerId),
+    shopName: safeText(shop.shopName),
+    description: safeText(shop.description),
+    contact: safeText(shop.contact),
+    avatarUrl: normalizeImageUrl(shop.avatarUrl, "avatar"),
+    parcelQrCodeUrl: normalizeImageUrl(
+      shop.parcelQrCodeUrl ?? shop.paymentQrCodeUrl ?? shop.parcelPaymentQrCodeUrl ?? shop.qrCodeUrl,
+      "product",
+    ),
+  };
+};
+
+const normalizeUserRecord = (userInput = {}) => {
+  const user = userInput && typeof userInput === "object" ? userInput : {};
+  return {
+    id: safeText(user.id ?? user._id) || createId("user"),
+    name: safeText(user.name),
+    email: toLower(user.email),
+    password: `${user.password ?? ""}`,
+    avatarUrl: normalizeImageUrl(user.avatarUrl, "avatar") || DEFAULT_AVATAR_URL,
+    phone: safeText(user.phone),
+    address: safeText(user.address),
+  };
+};
+
+const normalizeMeetupProposalRecord = (proposalInput = {}) => {
+  const proposal = proposalInput && typeof proposalInput === "object" ? proposalInput : {};
+  return {
+    location: safeText(proposal.location),
+    status: safeText(proposal.status),
+    proposedBy: safeText(proposal.proposedBy),
+    proposedAt: safeText(proposal.proposedAt),
+    responseLocation: safeText(proposal.responseLocation ?? proposal.counterLocation),
+    respondedBy: safeText(proposal.respondedBy),
+    respondedAt: safeText(proposal.respondedAt),
+  };
+};
+
 const normalizeChatMessageRecord = (messageInput = {}, defaultSenderId = "", fallbackCreatedAt = nowIso()) => {
   const message = messageInput && typeof messageInput === "object" ? messageInput : {};
   const createdAt = safeText(message.createdAt) || fallbackCreatedAt;
   const text = safeText(message.text ?? message.message);
   const imageUrl = normalizeImageUrl(message.imageUrl ?? message.image, "product");
+  const messageType = safeText(message.type ?? message.messageType) || (message.meetupProposal ? "meetup_proposal" : "text");
+  const meetupProposal = messageType === "meetup_proposal"
+    ? normalizeMeetupProposalRecord(message.meetupProposal)
+    : null;
 
   return {
     id: safeText(message.id ?? message._id) || createId("chat_msg"),
     senderId: safeText(message.senderId ?? message.fromUserId ?? defaultSenderId),
+    type: messageType,
+    orderId: safeText(message.orderId),
     text,
     imageUrl,
+    meetupProposal,
     createdAt,
   };
 };
@@ -161,13 +216,6 @@ const createSeedState = () => {
         avatarUrl: DEFAULT_AVATAR_URL,
         phone: "0812345678",
         address: "กรุงเทพมหานคร",
-        idCard: {
-          citizenId: "1111111111111",
-          title: "นาย",
-          firstName: "ผู้ใช้",
-          lastName: "ทดสอบ",
-          dob: "1995-01-01",
-        },
       },
       {
         id: ownerUserId,
@@ -177,13 +225,6 @@ const createSeedState = () => {
         avatarUrl: `${DEFAULT_AVATAR_URL}?owner=1`,
         phone: "0899999999",
         address: "เชียงใหม่",
-        idCard: {
-          citizenId: "2222222222222",
-          title: "นางสาว",
-          firstName: "เจ้าของ",
-          lastName: "ร้าน",
-          dob: "1993-05-20",
-        },
       },
     ],
     session: {
@@ -197,6 +238,7 @@ const createSeedState = () => {
         description: "ร้านทดลองสำหรับทดสอบระบบแบบไม่ใช้ฐานข้อมูล",
         contact: "Line: demo-shop",
         avatarUrl: DEFAULT_AVATAR_URL,
+        parcelQrCodeUrl: "",
       },
       {
         id: "shop_owner",
@@ -205,6 +247,7 @@ const createSeedState = () => {
         description: "สินค้าเดโม่สำหรับทดสอบหน้า home และ search",
         contact: "Line: seller-shop",
         avatarUrl: `${DEFAULT_AVATAR_URL}?shop=owner`,
+        parcelQrCodeUrl: `${DEFAULT_PRODUCT_IMAGE_URL}?seed=shop-owner-qr`,
       },
     ],
     products: [
@@ -356,9 +399,11 @@ export class MockDatabaseStore {
     const state = inputState && typeof inputState === "object" ? inputState : {};
 
     return {
-      users: Array.isArray(state.users) ? state.users : seed.users,
+      users: (Array.isArray(state.users) ? state.users : seed.users).map((user) => normalizeUserRecord(user)),
       session: state.session && typeof state.session === "object" ? state.session : seed.session,
-      shopProfiles: Array.isArray(state.shopProfiles) ? state.shopProfiles : seed.shopProfiles,
+      shopProfiles: (Array.isArray(state.shopProfiles) ? state.shopProfiles : seed.shopProfiles).map((shop) =>
+        normalizeShopProfileRecord(shop),
+      ),
       products: Array.isArray(state.products) ? state.products : seed.products,
       carts: Array.isArray(state.carts) ? state.carts : seed.carts,
       orders: Array.isArray(state.orders) ? state.orders : seed.orders,
@@ -410,13 +455,6 @@ export class MockDatabaseStore {
       avatarUrl: userRecord.avatarUrl ?? "",
       phone: userRecord.phone ?? "",
       address: userRecord.address ?? "",
-      idCard: {
-        citizenId: userRecord?.idCard?.citizenId ?? "",
-        title: userRecord?.idCard?.title ?? "",
-        firstName: userRecord?.idCard?.firstName ?? "",
-        lastName: userRecord?.idCard?.lastName ?? "",
-        dob: userRecord?.idCard?.dob ?? "",
-      },
     };
   }
 
@@ -462,10 +500,22 @@ export class MockDatabaseStore {
       description: "",
       contact: "",
       avatarUrl: "",
+      parcelQrCodeUrl: "",
     };
     this.state.shopProfiles.push(created);
     this.#persist();
     return created;
+  }
+
+  #findShopProfileByOwnerId(ownerId) {
+    const normalizedOwnerId = safeText(ownerId);
+    if (!normalizedOwnerId) return null;
+    return this.state.shopProfiles.find((shop) => safeText(shop?.ownerId) === normalizedOwnerId) ?? null;
+  }
+
+  #toShopResponse(shopRecord) {
+    if (!shopRecord) return null;
+    return normalizeShopProfileRecord(shopRecord);
   }
 
   #normalizeProductImageUrls(payload = {}) {
@@ -571,10 +621,100 @@ export class MockDatabaseStore {
       senderId: messageRecord.senderId ?? "",
       senderName: sender?.name ?? "ผู้ใช้",
       senderAvatarUrl: sender?.avatarUrl ?? "",
+      type: messageRecord.type ?? "text",
+      orderId: messageRecord.orderId ?? "",
       text: messageRecord.text ?? "",
       imageUrl: messageRecord.imageUrl ?? "",
+      meetupProposal: messageRecord.meetupProposal ?? null,
       createdAt: messageRecord.createdAt ?? "",
     };
+  }
+
+  #findOrCreateCheckoutChat({ buyerId, ownerId, productId }) {
+    const normalizedBuyerId = safeText(buyerId);
+    const normalizedOwnerId = safeText(ownerId);
+    const normalizedProductId = safeText(productId);
+
+    let chat = this.state.chats.find(
+      (item) =>
+        safeText(item?.buyerId) === normalizedBuyerId &&
+        safeText(item?.ownerId) === normalizedOwnerId &&
+        safeText(item?.productId) === normalizedProductId,
+    );
+
+    if (chat) {
+      chat = normalizeChatRecord(chat);
+      const index = this.state.chats.findIndex((item) => item?.id === chat.id);
+      if (index >= 0) this.state.chats[index] = chat;
+      return chat;
+    }
+
+    chat = normalizeChatRecord({
+      id: createId("chat"),
+      productId: normalizedProductId,
+      ownerId: normalizedOwnerId,
+      buyerId: normalizedBuyerId,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      messages: [],
+    });
+    this.state.chats.push(chat);
+    return chat;
+  }
+
+  #appendChatMessage(chatRecord, { senderId, type = "text", orderId = "", text = "", imageUrl = "", meetupProposal = null } = {}) {
+    if (!chatRecord) return null;
+    const createdAt = nowIso();
+    const messageRecord = normalizeChatMessageRecord(
+      {
+        senderId,
+        type,
+        orderId,
+        text,
+        imageUrl,
+        meetupProposal,
+        createdAt,
+      },
+      senderId,
+      createdAt,
+    );
+
+    const messages = this.#ensureChatMessages(chatRecord);
+    messages.push(messageRecord);
+    messages.sort((a, b) => toCreatedAtTime(a?.createdAt) - toCreatedAtTime(b?.createdAt));
+    chatRecord.updatedAt = messageRecord.createdAt;
+
+    return messageRecord;
+  }
+
+  #syncOrderStatusFromShopOrders(orderRecord) {
+    if (!orderRecord || !Array.isArray(orderRecord.shopOrders)) return;
+
+    const statuses = orderRecord.shopOrders
+      .map((shopOrder) => safeText(shopOrder?.status))
+      .filter(Boolean);
+
+    if (!statuses.length) {
+      orderRecord.status = "pending_seller_action";
+      return;
+    }
+
+    if (statuses.every((status) => status === "cancelled_by_seller")) {
+      orderRecord.status = "cancelled_by_seller";
+      return;
+    }
+
+    if (statuses.every((status) => status === "awaiting_meetup")) {
+      orderRecord.status = "awaiting_meetup";
+      return;
+    }
+
+    if (statuses.some((status) => status === "countered_by_seller")) {
+      orderRecord.status = "countered_by_seller";
+      return;
+    }
+
+    orderRecord.status = "pending_seller_action";
   }
 
   #toChatResponse(chatRecord, currentUserId) {
@@ -610,10 +750,13 @@ export class MockDatabaseStore {
 
   #toCartItemResponse(cart, item) {
     const product = this.#findProductById(item.productId);
+    const ownerId = safeText(product?.ownerId ?? item.ownerId);
+    const shop = this.#findShopProfileByOwnerId(ownerId);
     const fallbackProduct = product
       ? this.#toProductResponse(product)
       : {
           id: item.productId,
+          ownerId,
           name: item.snapshotName,
           imageUrl: item.snapshotImageUrl,
           imageUrls: [item.snapshotImageUrl].filter(Boolean),
@@ -624,11 +767,106 @@ export class MockDatabaseStore {
       id: item.id ?? "",
       cartId: cart.id ?? "",
       productId: item.productId ?? "",
+      ownerId,
       name: product?.name ?? item.snapshotName ?? "",
       imageUrl: product?.imageUrl ?? item.snapshotImageUrl ?? "",
       price: toNumber(product?.price ?? item.snapshotPrice, 0),
       quantity: Math.max(1, toNumber(item.quantity, 1)),
+      shopId: shop?.id ?? "",
+      shopName: shop?.shopName ?? item.snapshotShopName ?? "",
+      shopAvatarUrl: shop?.avatarUrl ?? item.snapshotShopAvatarUrl ?? "",
+      shopParcelQrCodeUrl: shop?.parcelQrCodeUrl ?? item.snapshotShopParcelQrCodeUrl ?? "",
+      shop: this.#toShopResponse(shop),
       product: fallbackProduct,
+    };
+  }
+
+  #toOrderItemResponse(itemRecord) {
+    if (!itemRecord) return null;
+    return {
+      itemId: safeText(itemRecord.itemId ?? itemRecord.id ?? itemRecord._id),
+      productId: safeText(itemRecord.productId),
+      name: safeText(itemRecord.name ?? itemRecord.productName),
+      imageUrl: normalizeImageUrl(itemRecord.imageUrl ?? itemRecord.image, "product"),
+      price: toNumber(itemRecord.price, 0),
+      quantity: Math.max(1, toNumber(itemRecord.quantity ?? itemRecord.qty, 1)),
+    };
+  }
+
+  #toOrderShopOrderResponse(shopOrderRecord) {
+    if (!shopOrderRecord) return null;
+
+    const items = ensureArray(shopOrderRecord.items)
+      .map((item) => this.#toOrderItemResponse(item))
+      .filter(Boolean);
+    const buyerShippingAddressRecord =
+      shopOrderRecord?.buyerShippingAddress && typeof shopOrderRecord.buyerShippingAddress === "object"
+        ? shopOrderRecord.buyerShippingAddress
+        : shopOrderRecord?.shippingAddress && typeof shopOrderRecord.shippingAddress === "object"
+          ? shopOrderRecord.shippingAddress
+          : null;
+
+    return {
+      ownerId: safeText(shopOrderRecord.ownerId),
+      shopId: safeText(shopOrderRecord.shopId),
+      shopName: safeText(shopOrderRecord.shopName) || "ร้านค้า",
+      shippingMethod: ShippingMethod.normalize(shopOrderRecord.shippingMethod),
+      status: safeText(shopOrderRecord.status),
+      items,
+      subtotal: toNumber(
+        shopOrderRecord.subtotal,
+        items.reduce((sum, item) => sum + (item.price ?? 0) * (item.quantity ?? 0), 0),
+      ),
+      meetupProposal: shopOrderRecord?.meetupProposal
+        ? {
+            location: safeText(shopOrderRecord.meetupProposal.location),
+            status: safeText(shopOrderRecord.meetupProposal.status),
+            proposedBy: safeText(shopOrderRecord.meetupProposal.proposedBy),
+            proposedAt: safeText(shopOrderRecord.meetupProposal.proposedAt),
+          }
+        : null,
+      parcelPayment: shopOrderRecord?.parcelPayment
+        ? {
+            qrCodeUrl: normalizeImageUrl(shopOrderRecord.parcelPayment.qrCodeUrl, "product"),
+            receiptImageUrl: normalizeImageUrl(shopOrderRecord.parcelPayment.receiptImageUrl, "product"),
+            status: safeText(shopOrderRecord.parcelPayment.status),
+            submittedAt: safeText(shopOrderRecord.parcelPayment.submittedAt),
+          }
+        : null,
+      buyerShippingAddress: buyerShippingAddressRecord
+        ? {
+            name: safeText(buyerShippingAddressRecord.name),
+            phone: safeText(buyerShippingAddressRecord.phone),
+            address: safeText(buyerShippingAddressRecord.address),
+          }
+        : null,
+    };
+  }
+
+  #toOrderResponse(orderRecord) {
+    if (!orderRecord) return null;
+
+    const shopOrders = ensureArray(orderRecord.shopOrders)
+      .map((shopOrder) => this.#toOrderShopOrderResponse(shopOrder))
+      .filter(Boolean);
+    const items = shopOrders.length
+      ? shopOrders.flatMap((shopOrder) => ensureArray(shopOrder.items))
+      : ensureArray(orderRecord.items)
+          .map((item) => this.#toOrderItemResponse(item))
+          .filter(Boolean);
+
+    return {
+      id: safeText(orderRecord.id ?? orderRecord._id),
+      userId: safeText(orderRecord.userId),
+      notes: safeText(orderRecord.notes),
+      status: safeText(orderRecord.status),
+      shopOrders,
+      items,
+      totalPrice: toNumber(
+        orderRecord.totalPrice,
+        items.reduce((sum, item) => sum + (item.price ?? 0) * (item.quantity ?? 0), 0),
+      ),
+      createdAt: safeText(orderRecord.createdAt),
     };
   }
 
@@ -672,13 +910,6 @@ export class MockDatabaseStore {
       avatarUrl: normalizeImageUrl(payload.avatarUrl, "avatar") || DEFAULT_AVATAR_URL,
       phone: safeText(payload.phone),
       address: safeText(payload.address),
-      idCard: {
-        citizenId: safeText(payload.nationalId ?? payload.citizenId),
-        title: safeText(payload.title),
-        firstName: firstName || safeText(payload.idCardFirstName),
-        lastName: lastName || safeText(payload.idCardLastName),
-        dob: safeText(payload.dob ?? payload.birthDate),
-      },
     };
 
     this.state.users.push(createdUser);
@@ -757,11 +988,49 @@ export class MockDatabaseStore {
     };
   }
 
+  deleteUserMe() {
+    const user = this.#requireCurrentUser();
+    const userId = safeText(user.id);
+    const ownedProductIds = this.state.products
+      .filter((product) => safeText(product?.ownerId) === userId)
+      .map((product) => safeText(product?.id))
+      .filter(Boolean);
+    const ownedProductIdSet = new Set(ownedProductIds);
+
+    this.state.users = this.state.users.filter((item) => safeText(item?.id) !== userId);
+    this.state.shopProfiles = this.state.shopProfiles.filter((shop) => safeText(shop?.ownerId) !== userId);
+    this.state.products = this.state.products.filter((product) => safeText(product?.ownerId) !== userId);
+    this.state.carts = this.state.carts
+      .filter((cart) => safeText(cart?.userId) !== userId)
+      .map((cart) => ({
+        ...cart,
+        items: ensureArray(cart?.items).filter((item) => !ownedProductIdSet.has(safeText(item?.productId))),
+      }));
+    this.state.orders = this.state.orders.filter((order) => {
+      const isBuyerOrder = safeText(order?.userId) === userId;
+      const hasDeletedSeller = ensureArray(order?.shopOrders).some(
+        (shopOrder) => safeText(shopOrder?.ownerId) === userId,
+      );
+      return !isBuyerOrder && !hasDeletedSeller;
+    });
+    this.state.chats = this.state.chats.filter((chat) => {
+      const isParticipant =
+        safeText(chat?.ownerId) === userId ||
+        safeText(chat?.buyerId) === userId;
+      const isOwnedProductChat = ownedProductIdSet.has(safeText(chat?.productId));
+      return !isParticipant && !isOwnedProductChat;
+    });
+    this.state.session = { userId: "" };
+    this.#persist();
+
+    return { ok: true };
+  }
+
   myShopMe() {
     const user = this.#requireCurrentUser();
     const shop = this.#getOrCreateShopProfile(user.id);
     return {
-      shop: deepClone(shop),
+      shop: this.#toShopResponse(shop),
     };
   }
 
@@ -774,13 +1043,23 @@ export class MockDatabaseStore {
     shop.description = safeText(payload.description) || shop.description;
     shop.contact = safeText(payload.contact) || shop.contact;
 
-    const nextAvatar = normalizeImageUrl(payload.avatarUrl, "avatar");
+    const nextAvatar = normalizeImageUrl(payload.avatar ?? payload.avatarUrl, "avatar");
     if (nextAvatar) shop.avatarUrl = nextAvatar;
+
+    const nextParcelQrCode = normalizeImageUrl(
+      payload.parcelQrCode ??
+        payload.paymentQrCode ??
+        payload.parcelQrCodeUrl ??
+        payload.parcelPaymentQrCodeUrl ??
+        payload.qrCodeUrl,
+      "product",
+    );
+    if (nextParcelQrCode) shop.parcelQrCodeUrl = nextParcelQrCode;
 
     this.#persist();
 
     return {
-      shop: deepClone(shop),
+      shop: this.#toShopResponse(shop),
     };
   }
 
@@ -1068,6 +1347,101 @@ export class MockDatabaseStore {
     };
   }
 
+  respondMeetupProposal(chatId, messageId, payloadInput = {}) {
+    const currentUser = this.#requireCurrentUser();
+    const payload = toPayloadObject(payloadInput);
+    const chat = this.#findChatById(chatId);
+    this.#assertChatAccess(chat, currentUser.id);
+
+    if (safeText(chat?.ownerId) !== safeText(currentUser.id)) {
+      throw new Error("เฉพาะคนขายเท่านั้นที่ตอบกลับข้อเสนอนัดรับได้");
+    }
+
+    const action = safeText(payload.action);
+    const nextLocation = safeText(payload.location);
+    if (!["accept", "counter", "cancel"].includes(action)) {
+      throw new Error("ไม่พบ action สำหรับตอบกลับข้อเสนอนัดรับ");
+    }
+    if (action === "counter" && !nextLocation) {
+      throw new Error("กรุณาระบุสถานที่นัดรับใหม่");
+    }
+
+    const messages = this.#ensureChatMessages(chat);
+    const proposalMessage = messages.find((message) => safeText(message?.id) === safeText(messageId));
+    if (!proposalMessage || safeText(proposalMessage?.type) !== "meetup_proposal" || !proposalMessage?.meetupProposal) {
+      throw new Error("ไม่พบกล่องข้อเสนอนัดรับที่ต้องการตอบกลับ");
+    }
+
+    if (safeText(proposalMessage.meetupProposal.status) !== "pending_seller_response") {
+      throw new Error("ข้อเสนอนัดรับนี้ถูกตอบกลับแล้ว");
+    }
+
+    const order = this.state.orders.find((item) => safeText(item?.id) === safeText(proposalMessage.orderId));
+    if (!order) throw new Error("ไม่พบคำสั่งซื้อที่เกี่ยวข้องกับข้อเสนอนี้");
+
+    const shopOrder = ensureArray(order.shopOrders).find(
+      (item) =>
+        safeText(item?.ownerId) === safeText(chat?.ownerId) &&
+        ShippingMethod.isMeetup(item?.shippingMethod),
+    );
+    if (!shopOrder?.meetupProposal) {
+      throw new Error("ไม่พบข้อมูลการนัดรับสำหรับคำสั่งซื้อนี้");
+    }
+
+    const respondedAt = nowIso();
+    const sellerName = this.#findUserById(currentUser.id)?.name ?? "คนขาย";
+
+    if (action === "accept") {
+      proposalMessage.meetupProposal.status = "awaiting_meetup";
+      proposalMessage.meetupProposal.respondedBy = currentUser.id;
+      proposalMessage.meetupProposal.respondedAt = respondedAt;
+
+      shopOrder.status = "awaiting_meetup";
+      shopOrder.meetupProposal.status = "awaiting_meetup";
+      shopOrder.meetupProposal.proposedAt = shopOrder.meetupProposal.proposedAt || proposalMessage.meetupProposal.proposedAt;
+
+      this.#appendChatMessage(chat, {
+        senderId: currentUser.id,
+        text: `${sellerName} ยอมรับข้อเสนอสถานที่นัดรับแล้ว สถานะคำสั่งซื้อเปลี่ยนเป็นรอนัดพบ`,
+      });
+    } else if (action === "counter") {
+      proposalMessage.meetupProposal.status = "countered_by_seller";
+      proposalMessage.meetupProposal.responseLocation = nextLocation;
+      proposalMessage.meetupProposal.respondedBy = currentUser.id;
+      proposalMessage.meetupProposal.respondedAt = respondedAt;
+
+      shopOrder.status = "countered_by_seller";
+      shopOrder.meetupProposal.status = "countered_by_seller";
+      shopOrder.meetupProposal.location = nextLocation;
+
+      this.#appendChatMessage(chat, {
+        senderId: currentUser.id,
+        text: `${sellerName} เสนอเปลี่ยนสถานที่นัดรับเป็น: ${nextLocation}`,
+      });
+    } else {
+      proposalMessage.meetupProposal.status = "cancelled_by_seller";
+      proposalMessage.meetupProposal.respondedBy = currentUser.id;
+      proposalMessage.meetupProposal.respondedAt = respondedAt;
+
+      shopOrder.status = "cancelled_by_seller";
+      shopOrder.meetupProposal.status = "cancelled_by_seller";
+
+      this.#appendChatMessage(chat, {
+        senderId: currentUser.id,
+        text: `${sellerName} ยกเลิกการนัดรับสำหรับคำสั่งซื้อนี้แล้ว`,
+      });
+    }
+
+    this.#syncOrderStatusFromShopOrders(order);
+    chat.updatedAt = respondedAt;
+    this.#persist();
+
+    return {
+      chat: this.#toChatResponse(chat, currentUser.id),
+      message: this.#toChatMessageResponse(chat, proposalMessage),
+    };
+  }
+
   listCart() {
     const user = this.#requireCurrentUser();
     const cart = this.#getOrCreateCart(user.id);
@@ -1086,6 +1460,17 @@ export class MockDatabaseStore {
     };
   }
 
+  listMyOrders() {
+    const user = this.#requireCurrentUser();
+    const orders = sortByCreatedAtDesc(
+      this.state.orders.filter((order) => safeText(order?.userId) === safeText(user.id)),
+    )
+      .map((order) => this.#toOrderResponse(order))
+      .filter(Boolean);
+
+    return { orders };
+  }
+
   addCartItem(payloadInput = {}) {
     const user = this.#requireCurrentUser();
     const payload = toPayloadObject(payloadInput);
@@ -1102,13 +1487,18 @@ export class MockDatabaseStore {
     if (existing) {
       existing.quantity = Math.max(1, toNumber(existing.quantity, 1) + quantity);
     } else {
+      const productShop = this.#findShopProfileByOwnerId(product.ownerId);
       cart.items.push({
         id: createId("cart_item"),
         productId,
+        ownerId: product.ownerId,
         quantity,
         snapshotName: product.name,
         snapshotImageUrl: product.imageUrl,
         snapshotPrice: product.price,
+        snapshotShopName: productShop?.shopName ?? "",
+        snapshotShopAvatarUrl: productShop?.avatarUrl ?? "",
+        snapshotShopParcelQrCodeUrl: productShop?.parcelQrCodeUrl ?? "",
       });
     }
 
@@ -1151,33 +1541,220 @@ export class MockDatabaseStore {
     if (!cartItems.length) throw new Error("ไม่พบสินค้าในตะกร้า");
 
     const resolvedItems = cartItems.map((item) => this.#toCartItemResponse(cart, item));
-    const orderTotal = resolvedItems.reduce(
-      (sum, item) => sum + (item.price ?? 0) * (item.quantity ?? 0),
-      0,
-    );
+    const rawShopOrders = Array.isArray(payload.shopOrders)
+      ? payload.shopOrders
+      : tryParseJson(payload.shopOrders, []);
 
+    if (!Array.isArray(rawShopOrders) || !rawShopOrders.length) {
+      const orderTotal = resolvedItems.reduce(
+        (sum, item) => sum + (item.price ?? 0) * (item.quantity ?? 0),
+        0,
+      );
+
+      const createdOrder = {
+        id: createId("order"),
+        userId: user.id,
+        notes: safeText(payload.notes),
+        items: resolvedItems.map((item) => ({
+          productId: item.productId,
+          name: item.name,
+          imageUrl: item.imageUrl,
+          price: item.price,
+          quantity: item.quantity,
+        })),
+        totalPrice: orderTotal,
+        createdAt: nowIso(),
+      };
+
+      this.state.orders.push(createdOrder);
+      cart.items = [];
+      this.#persist();
+
+      return {
+        orderId: createdOrder.id,
+        message: "สั่งซื้อเรียบร้อย (mock mode)",
+      };
+    }
+
+    const normalizedShopOrders = rawShopOrders.map((shopOrder, index) => {
+      const normalizedOwnerId = safeText(shopOrder?.ownerId);
+      const requestedItemIds = ensureArray(shopOrder?.itemIds)
+        .map((itemId) => safeText(itemId))
+        .filter(Boolean);
+      const selectedItems = resolvedItems.filter((item) => {
+        const sameOwner = safeText(item?.ownerId) === normalizedOwnerId;
+        if (!sameOwner) return false;
+        if (!requestedItemIds.length) return true;
+        return requestedItemIds.includes(safeText(item?.id));
+      });
+
+      if (!normalizedOwnerId) {
+        throw new Error(`ไม่พบ ownerId ของร้านลำดับที่ ${index + 1}`);
+      }
+      if (!selectedItems.length) {
+        throw new Error(`ไม่พบสินค้าของร้านลำดับที่ ${index + 1} ในตะกร้า`);
+      }
+
+      const shippingMethod = ShippingMethod.normalize(shopOrder?.shippingMethod);
+      const shop = this.#findShopProfileByOwnerId(normalizedOwnerId);
+      const meetupLocation = safeText(shopOrder?.meetupLocation);
+      const buyerShippingAddressInput =
+        shopOrder?.buyerShippingAddress && typeof shopOrder.buyerShippingAddress === "object"
+          ? shopOrder.buyerShippingAddress
+          : {};
+      const buyerShippingAddress = {
+        name: safeText(buyerShippingAddressInput?.name ?? user.name),
+        phone: safeText(buyerShippingAddressInput?.phone ?? user.phone),
+        address: safeText(buyerShippingAddressInput?.address ?? user.address ?? shopOrder?.buyerAddress),
+      };
+      const receiptFileKey = safeText(shopOrder?.receiptFileKey);
+      const receiptImageUrl = normalizeImageUrl(
+        payload?.[receiptFileKey] ?? shopOrder?.receiptImageUrl ?? shopOrder?.receiptImage,
+        "product",
+      );
+      const subtotal = selectedItems.reduce(
+        (sum, item) => sum + (item.price ?? 0) * (item.quantity ?? 0),
+        0,
+      );
+
+      if (ShippingMethod.isMeetup(shippingMethod) && !meetupLocation) {
+        throw new Error(`กรุณาระบุสถานที่นัดรับสำหรับร้าน ${shop?.shopName || selectedItems[0]?.shopName || index + 1}`);
+      }
+
+      if (ShippingMethod.isParcel(shippingMethod)) {
+        if (!safeText(shop?.parcelQrCodeUrl)) {
+          throw new Error(`ร้าน ${shop?.shopName || selectedItems[0]?.shopName || index + 1} ยังไม่ได้ตั้งค่า QR code รับชำระ`);
+        }
+        if (!receiptImageUrl) {
+          throw new Error(`กรุณาแนบรูปใบเสร็จสำหรับร้าน ${shop?.shopName || selectedItems[0]?.shopName || index + 1}`);
+        }
+        if (!buyerShippingAddress.address) {
+          throw new Error("กรุณากรอกที่อยู่ผู้ซื้อก่อนสั่งซื้อแบบส่งพัสดุ");
+        }
+      }
+
+      return {
+        ownerId: normalizedOwnerId,
+        shopId: safeText(shop?.id),
+        shopName: safeText(shop?.shopName) || safeText(selectedItems[0]?.shopName) || "ร้านค้า",
+        shippingMethod,
+        status: ShippingMethod.isParcel(shippingMethod)
+          ? "pending_payment_verification"
+          : "pending_meetup_response",
+        items: selectedItems.map((item) => ({
+          itemId: item.id,
+          productId: item.productId,
+          name: item.name,
+          imageUrl: item.imageUrl,
+          price: item.price,
+          quantity: item.quantity,
+        })),
+        subtotal,
+        meetupProposal: ShippingMethod.isMeetup(shippingMethod)
+          ? {
+              location: meetupLocation,
+              status: "pending_seller_response",
+              proposedBy: user.id,
+              proposedAt: nowIso(),
+            }
+          : null,
+        parcelPayment: ShippingMethod.isParcel(shippingMethod)
+          ? {
+              qrCodeUrl: shop?.parcelQrCodeUrl ?? "",
+              receiptImageUrl,
+              status: "pending_seller_confirmation",
+              submittedAt: nowIso(),
+            }
+          : null,
+        buyerShippingAddress: ShippingMethod.isParcel(shippingMethod) ? buyerShippingAddress : null,
+      };
+    });
+
+    const createdAt = nowIso();
+    const totalPrice = normalizedShopOrders.reduce((sum, shopOrder) => sum + (shopOrder?.subtotal ?? 0), 0);
     const createdOrder = {
       id: createId("order"),
       userId: user.id,
       notes: safeText(payload.notes),
-      items: resolvedItems.map((item) => ({
-        productId: item.productId,
-        name: item.name,
-        imageUrl: item.imageUrl,
-        price: item.price,
-        quantity: item.quantity,
-      })),
-      totalPrice: orderTotal,
-      createdAt: nowIso(),
+      status: "pending_seller_action",
+      shopOrders: normalizedShopOrders,
+      items: normalizedShopOrders.flatMap((shopOrder) => shopOrder.items),
+      totalPrice,
+      createdAt,
     };
 
+    const consumedItemIds = new Set(
+      normalizedShopOrders.flatMap((shopOrder) => shopOrder.items.map((item) => safeText(item?.itemId))),
+    );
+
+    normalizedShopOrders.forEach((shopOrder) => {
+      const firstItem = shopOrder?.items?.[0];
+      if (!firstItem?.productId) return;
+
+      const chat = this.#findOrCreateCheckoutChat({
+        buyerId: user.id,
+        ownerId: shopOrder.ownerId,
+        productId: firstItem.productId,
+      });
+      const itemSummary = shopOrder.items
+        .map((item) => `- ${item.name} x ${item.quantity}`)
+        .join("\n");
+
+      if (ShippingMethod.isMeetup(shopOrder.shippingMethod)) {
+        this.#appendChatMessage(chat, {
+          senderId: user.id,
+          type: "meetup_proposal",
+          orderId: createdOrder.id,
+          meetupProposal: {
+            location: shopOrder?.meetupProposal?.location ?? "",
+            status: shopOrder?.meetupProposal?.status ?? "pending_seller_response",
+            proposedBy: user.id,
+            proposedAt: shopOrder?.meetupProposal?.proposedAt ?? createdAt,
+          },
+        });
+        this.#appendChatMessage(chat, {
+          senderId: user.id,
+          text: [
+            `คำขอสั่งซื้อ #${createdOrder.id}`,
+            "วิธีจัดส่ง: นัดรับ",
+            "รายการสินค้า:",
+            itemSummary,
+            "กรุณาตอบกลับจากกล่องข้อเสนอด้านบนเพื่อยอมรับ เสนอเปลี่ยนสถานที่ หรือยกเลิกการนัดรับ",
+          ].join("\n"),
+        });
+        return;
+      }
+
+      this.#appendChatMessage(chat, {
+        senderId: user.id,
+        text: [
+          `คำขอสั่งซื้อ #${createdOrder.id}`,
+          "วิธีจัดส่ง: ส่งพัสดุ",
+          `ชื่อผู้รับ: ${shopOrder?.buyerShippingAddress?.name ?? "-"}`,
+          `เบอร์โทรผู้รับ: ${shopOrder?.buyerShippingAddress?.phone ?? "-"}`,
+          `ที่อยู่จัดส่ง: ${shopOrder?.buyerShippingAddress?.address ?? "-"}`,
+          "ผู้ซื้อแนบสลิปการชำระเงินแล้ว กรุณาตรวจสอบข้อมูลและยืนยันคำสั่งซื้อ",
+          "รายการสินค้า:",
+          itemSummary,
+        ].join("\n"),
+      });
+
+      if (safeText(shopOrder?.parcelPayment?.receiptImageUrl)) {
+        this.#appendChatMessage(chat, {
+          senderId: user.id,
+          text: `สลิปการชำระเงินสำหรับคำสั่งซื้อ #${createdOrder.id}`,
+          imageUrl: shopOrder.parcelPayment.receiptImageUrl,
+        });
+      }
+    });
+
     this.state.orders.push(createdOrder);
-    cart.items = [];
+    cart.items = cartItems.filter((item) => !consumedItemIds.has(safeText(item?.id)));
     this.#persist();
 
     return {
       orderId: createdOrder.id,
-      message: "สั่งซื้อเรียบร้อย (mock mode)",
+      message: "ส่งคำสั่งซื้อไปยังร้านค้าแล้ว สามารถติดตามได้ที่หน้า การสั่งซื้อของฉัน หรือทางแชท",
     };
   }
 }

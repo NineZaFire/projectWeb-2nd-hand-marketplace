@@ -40,6 +40,9 @@ export class MockApiRouter {
     if (normalizedMethod === "PATCH" && pathname === "/api/users/me") {
       return this.store.updateUserMe(body);
     }
+    if (normalizedMethod === "DELETE" && pathname === "/api/users/me") {
+      return this.store.deleteUserMe();
+    }
 
     // ---------- Shop ----------
     if (normalizedMethod === "GET" && pathname === "/api/myshop/me") {
@@ -100,12 +103,34 @@ export class MockApiRouter {
       return this.store.checkout(body);
     }
 
+    // ---------- Orders ----------
+    if (normalizedMethod === "GET" && pathname === "/api/orders/me") {
+      return this.store.listMyOrders();
+    }
+
     // ---------- Chat ----------
     if (normalizedMethod === "GET" && pathname === "/api/chats") {
       return this.store.listMyChats();
     }
     if (normalizedMethod === "POST" && pathname === "/api/chats") {
       return this.store.startProductChat(body);
+    }
+    if (
+      normalizedMethod === "POST" &&
+      pathname.startsWith("/api/chats/") &&
+      pathname.includes("/meetup-proposals/") &&
+      pathname.endsWith("/respond")
+    ) {
+      const rawPath = pathname.slice("/api/chats/".length, -"/respond".length);
+      const [rawChatId, rawMessageSegment, rawMessageId] = rawPath.split("/");
+      if (rawMessageSegment !== "meetup-proposals") {
+        throw new Error(`Mock API ยังไม่รองรับ ${normalizedMethod} ${pathname}`);
+      }
+      return this.store.respondMeetupProposal(
+        decodeURIComponent(rawChatId),
+        decodeURIComponent(rawMessageId),
+        body,
+      );
     }
     if (pathname.startsWith("/api/chats/") && pathname.endsWith("/messages")) {
       const rawChatId = pathname.slice("/api/chats/".length, -"/messages".length);

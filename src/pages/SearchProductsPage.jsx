@@ -2,6 +2,7 @@ import React from "react";
 import { MyShopService } from "../services/MyShopService";
 import { ProductCategory } from "../models/ProductCategory";
 import { CartService } from "../services/CartService";
+import { UserService } from "../services/UserService";
 import { CartPopup, ProfilePopup } from "../components/HeaderActionPopups";
 
 export class SearchProductsPage extends React.Component {
@@ -12,18 +13,30 @@ export class SearchProductsPage extends React.Component {
     products: [],
     showProfilePopup: false,
     showCartPopup: false,
+    showEditModal: false,
     cartLoading: false,
     cartError: "",
     cartDone: "",
     cartItems: [],
     checkingOut: false,
+    profileDraft: null,
+    profileAvatarFile: null,
+    profileAvatarPreviewUrl: "",
+    profileSaving: false,
+    profileDeleting: false,
+    profileError: "",
   };
 
   myShopService = MyShopService.instance();
   cartService = CartService.instance();
+  userService = UserService.instance();
 
   async componentDidMount() {
     await this.searchProducts(this.state.keyword);
+  }
+
+  componentWillUnmount() {
+    this.revokePreviewUrl(this.state.profileAvatarPreviewUrl);
   }
 
   componentDidUpdate(prevProps) {
@@ -38,6 +51,15 @@ export class SearchProductsPage extends React.Component {
 
   onKeywordChange = (value) => {
     this.setState({ keyword: value ?? "" });
+  };
+
+  revokePreviewUrl = (previewUrl) => {
+    if (!previewUrl || typeof URL === "undefined") return;
+    try {
+      URL.revokeObjectURL(previewUrl);
+    } catch {
+      // ignore cleanup error
+    }
   };
 
   onSubmitSearch = async (e) => {
@@ -56,9 +78,106 @@ export class SearchProductsPage extends React.Component {
     this.setState({ showProfilePopup: false });
   };
 
+  openEditModal = () => {
+    this.revokePreviewUrl(this.state.profileAvatarPreviewUrl);
+    this.setState({
+      showProfilePopup: false,
+      showEditModal: true,
+      profileDraft: { ...(this.props.user ?? {}) },
+      profileAvatarFile: null,
+      profileAvatarPreviewUrl: "",
+      profileError: "",
+    });
+  };
+
+  closeEditModal = () => {
+    this.revokePreviewUrl(this.state.profileAvatarPreviewUrl);
+    this.setState({
+      showEditModal: false,
+      profileDraft: null,
+      profileAvatarFile: null,
+      profileAvatarPreviewUrl: "",
+      profileError: "",
+    });
+  };
+
   goMyShop = () => {
     this.setState({ showProfilePopup: false });
     this.props.onGoMyShop?.();
+  };
+
+  goMyOrders = () => {
+    this.setState({ showProfilePopup: false });
+    this.props.onGoMyOrders?.();
+  };
+
+  setProfileDraftField = (key, value) => {
+    this.setState((s) => ({
+      profileDraft: { ...s.profileDraft, [key]: value },
+      profileError: "",
+    }));
+  };
+
+  setProfileAvatarFile = (file) => {
+    this.revokePreviewUrl(this.state.profileAvatarPreviewUrl);
+    const nextFile = file ?? null;
+    const profileAvatarPreviewUrl =
+      nextFile && typeof URL !== "undefined" ? URL.createObjectURL(nextFile) : "";
+
+    this.setState({ profileAvatarFile: nextFile, profileAvatarPreviewUrl, profileError: "" });
+  };
+
+  saveProfile = async () => {
+    const { profileDraft, profileAvatarFile, profileAvatarPreviewUrl } = this.state;
+    this.setState({ profileSaving: true, profileError: "" });
+    try {
+      const editablePayload = {
+        name: profileDraft?.name ?? "",
+        email: profileDraft?.email ?? "",
+        phone: profileDraft?.phone ?? "",
+        address: profileDraft?.address ?? "",
+      };
+
+      const result = profileAvatarFile
+        ? await this.userService.updateMeFormData(editablePayload, profileAvatarFile)
+        : await this.userService.updateMe(editablePayload);
+      const updated = result?.user;
+      if (!updated) throw new Error("อัปเดตไม่สำเร็จ");
+
+      this.props.onUpdatedUser?.(updated);
+      this.revokePreviewUrl(profileAvatarPreviewUrl);
+      this.setState({
+        showEditModal: false,
+        profileDraft: { ...updated },
+        profileAvatarFile: null,
+        profileAvatarPreviewUrl: "",
+        profileError: "",
+      });
+    } catch (e) {
+      this.setState({ profileError: e?.message ?? "เกิดข้อผิดพลาด" });
+    } finally {
+      this.setState({ profileSaving: false });
+    }
+  };
+
+  deleteAccount = async () => {
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm("ยืนยันลบบัญชีนี้? การดำเนินการนี้ไม่สามารถย้อนกลับได้");
+      if (!confirmed) return;
+    }
+
+    const { profileAvatarPreviewUrl } = this.state;
+    this.setState({ profileDeleting: true, profileError: "" });
+    try {
+      await this.userService.deleteMe();
+      this.revokePreviewUrl(profileAvatarPreviewUrl);
+      this.props.onDeletedAccount?.();
+    } catch (e) {
+      this.setState({
+        profileDeleting: false,
+        profileError: e?.message ?? "ลบบัญชีไม่สำเร็จ",
+      });
+    }
   };
 
   openCartPopup = async () => {
@@ -105,12 +224,12 @@ export class SearchProductsPage extends React.Component {
     this.props.onOpenProduct?.(item?.toProductPayload?.() ?? null);
   };
 
-  checkoutCart = async () => {
+  checkoutCart = async (checkoutPayload = {}) => {
     if (!this.state.cartItems.length) return;
 
     this.setState({ checkingOut: true, cartError: "", cartDone: "" });
     try {
-      const result = await this.cartService.checkout();
+      const result = await this.cartService.checkout(checkoutPayload);
       await this.loadCartItems();
       this.setState({
         cartDone: result?.message ?? "สั่งซื้อเรียบร้อย",
@@ -187,11 +306,18 @@ export class SearchProductsPage extends React.Component {
       products,
       showProfilePopup,
       showCartPopup,
+      showEditModal,
       cartLoading,
       cartError,
       cartDone,
       cartItems,
       checkingOut,
+      profileDraft,
+      profileAvatarFile,
+      profileAvatarPreviewUrl,
+      profileSaving,
+      profileDeleting,
+      profileError,
     } = this.state;
     const labelKeyword = keyword.trim() ? keyword.trim() : "ทั้งหมด";
     const cartTotalLabel = this.getCartTotalLabel();
@@ -268,7 +394,7 @@ export class SearchProductsPage extends React.Component {
             ) : null}
 
             {!loading && !error && products.length ? (
-              <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4">
                 {products.map((product, index) => (
                   <SearchProductCard
                     key={product.id || `${product.name}-${index}`}
@@ -284,6 +410,7 @@ export class SearchProductsPage extends React.Component {
         {showCartPopup ? (
           <CartPopup
             items={cartItems}
+            buyer={this.props.user}
             loading={cartLoading}
             error={cartError}
             done={cartDone}
@@ -300,8 +427,27 @@ export class SearchProductsPage extends React.Component {
           <ProfilePopup
             user={this.props.user}
             onClose={this.closeProfilePopup}
+            onEdit={this.openEditModal}
             onGoMyShop={this.goMyShop}
+            onGoMyOrders={this.goMyOrders}
+            goMyShopButtonClassName="w-full rounded-xl bg-[#F4D03E] text-black px-3 py-2.5 text-sm font-semibold"
             onLogout={this.props.onLogout}
+          />
+        ) : null}
+
+        {showEditModal && profileDraft ? (
+          <EditProfileModal
+            user={profileDraft}
+            saving={profileSaving}
+            error={profileError}
+            avatarFile={profileAvatarFile}
+            avatarPreviewUrl={profileAvatarPreviewUrl}
+            onClose={this.closeEditModal}
+            onChangeField={this.setProfileDraftField}
+            onChangeAvatarFile={this.setProfileAvatarFile}
+            onSave={this.saveProfile}
+            onDelete={this.deleteAccount}
+            deleting={profileDeleting}
           />
         ) : null}
       </div>
@@ -336,6 +482,126 @@ class SearchProductCard extends React.Component {
           </button>
         </div>
       </article>
+    );
+  }
+}
+
+class EditProfileModal extends React.Component {
+  stop = (e) => e.stopPropagation();
+
+  render() {
+    const {
+      user,
+      saving,
+      deleting,
+      error,
+      avatarFile,
+      avatarPreviewUrl,
+      onClose,
+      onChangeField,
+      onChangeAvatarFile,
+      onSave,
+      onDelete,
+    } = this.props;
+    const displayAvatarUrl = avatarPreviewUrl || user?.avatarUrl || "";
+
+    return (
+      <div className="fixed inset-0 z-[60] bg-black/40 overflow-y-auto hide-scrollbar p-4" onClick={onClose}>
+        <div
+          className="mx-auto my-4 w-full max-w-3xl max-h-[calc(100dvh-2rem)] overflow-y-auto hide-scrollbar rounded-3xl bg-white shadow p-4 md:p-6 space-y-6"
+          onClick={this.stop}
+        >
+          <div className="flex items-center justify-between">
+            <div className="text-2xl font-semibold">บัญชีของฉัน</div>
+            <button
+              className="h-10 w-10 rounded-xl border border-zinc-200 grid place-items-center"
+              onClick={onClose}
+              title="ปิด"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <label className="group relative block h-20 w-20 cursor-pointer overflow-hidden rounded-full bg-zinc-200 ring-4 ring-white">
+              {displayAvatarUrl ? (
+                <img src={displayAvatarUrl} alt="avatar" className="h-full w-full object-cover" />
+              ) : (
+                <span className="grid h-full w-full place-items-center text-zinc-600">👤</span>
+              )}
+              <div className="absolute inset-0 grid place-items-center bg-black/45 text-center text-[11px] font-semibold text-white opacity-0 transition group-hover:opacity-100">
+                กดเพื่อเปลี่ยนรูป
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => onChangeAvatarFile?.(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            <div className="space-y-1">
+              <div className="text-3xl font-semibold">{user?.name || "User"}</div>
+              <div className="text-sm text-zinc-500">กดที่รูปเพื่ออัปโหลดและแก้ไขรูปโปรไฟล์</div>
+              {avatarFile ? <div className="text-xs text-zinc-500">{avatarFile.name}</div> : null}
+            </div>
+          </div>
+
+          {error ? <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
+
+          <div className="space-y-3">
+            <div className="text-2xl font-semibold text-zinc-800">ข้อมูลบัญชี</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Field label="ชื่อที่แสดง" value={user?.name} onChange={(v) => onChangeField("name", v)} />
+              <Field label="อีเมล" value={user?.email} onChange={(v) => onChangeField("email", v)} />
+              <Field label="เบอร์โทร" value={user?.phone} onChange={(v) => onChangeField("phone", v)} />
+              <Field label="ที่อยู่" value={user?.address} onChange={(v) => onChangeField("address", v)} full />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <button
+              className="rounded-xl border border-red-200 px-4 py-2 font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
+              onClick={onDelete}
+              disabled={saving || deleting}
+            >
+              {deleting ? "กำลังลบบัญชี..." : "ลบบัญชี"}
+            </button>
+            <div className="flex gap-2">
+              <button
+                className="rounded-xl border border-zinc-200 px-4 py-2 font-medium"
+                onClick={onClose}
+                disabled={saving || deleting}
+              >
+                ยกเลิก
+              </button>
+              <button
+                className="rounded-xl bg-[#F4D03E] text-black px-4 py-2 font-semibold disabled:opacity-60"
+                onClick={onSave}
+                disabled={saving || deleting}
+              >
+                {saving ? "กำลังบันทึก..." : "บันทึก"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+}
+
+class Field extends React.Component {
+  render() {
+    const { label, value, disabled, onChange, full } = this.props;
+    return (
+      <label className={`space-y-1 ${full ? "md:col-span-2" : ""}`}>
+        <div className="text-sm font-medium text-zinc-600">{label}</div>
+        <input
+          className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none disabled:bg-zinc-100"
+          value={value ?? ""}
+          disabled={disabled}
+          onChange={(e) => onChange?.(e.target.value)}
+        />
+      </label>
     );
   }
 }

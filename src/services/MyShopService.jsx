@@ -21,10 +21,32 @@ export class MyShopService {
   }
 
   // โครง backend: PUT /api/myshop/me (upsert ลง database)
-  async upsert(payload) {
+  async upsert(payload, { avatarFile = null, parcelQrFile = null } = {}) {
+    const hasFiles = Boolean(avatarFile || parcelQrFile);
+    if (!hasFiles) {
+      const result = await this.http.request("/api/myshop/me", {
+        method: "PUT",
+        body: payload,
+      });
+      return { shop: result?.shop ? ShopProfile.fromJSON(result.shop) : null };
+    }
+
+    const formData = new FormData();
+    Object.entries(payload ?? {}).forEach(([key, value]) => {
+      formData.append(key, value ?? "");
+    });
+
+    if (avatarFile) {
+      formData.append("avatar", avatarFile);
+    }
+    if (parcelQrFile) {
+      formData.append("parcelQrCode", parcelQrFile);
+      formData.append("paymentQrCode", parcelQrFile);
+    }
+
     const result = await this.http.request("/api/myshop/me", {
       method: "PUT",
-      body: payload,
+      body: formData,
     });
     return { shop: result?.shop ? ShopProfile.fromJSON(result.shop) : null };
   }

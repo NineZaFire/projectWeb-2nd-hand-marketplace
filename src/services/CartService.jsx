@@ -13,6 +13,35 @@ export class CartService {
     this.http = new HttpClient({ baseUrl: import.meta.env.VITE_API_URL ?? "" });
   }
 
+  buildCheckoutRequestBody(payload = {}) {
+    const shopOrders = Array.isArray(payload?.shopOrders) ? payload.shopOrders : [];
+    const hasReceiptFiles = shopOrders.some((shopOrder) => Boolean(shopOrder?.receiptFile));
+
+    if (!hasReceiptFiles) return payload;
+
+    const formData = new FormData();
+    const serializedShopOrders = shopOrders.map((shopOrder, index) => {
+      const { receiptFile, ...rest } = shopOrder ?? {};
+      const receiptFileKey = receiptFile ? `receiptFile_${index}` : "";
+
+      if (receiptFile && receiptFileKey) {
+        formData.append(receiptFileKey, receiptFile);
+      }
+
+      return {
+        ...rest,
+        receiptFileKey,
+      };
+    });
+
+    formData.append("shopOrders", JSON.stringify(serializedShopOrders));
+    if (payload?.notes != null) {
+      formData.append("notes", `${payload.notes ?? ""}`);
+    }
+
+    return formData;
+  }
+
   // โครง backend: GET /api/cart (ดึงตะกร้าจาก database ของผู้ใช้ปัจจุบัน)
   async listMyCart() {
     const result = await this.http.get("/api/cart");
@@ -57,7 +86,8 @@ export class CartService {
 
   // โครง backend: POST /api/cart/checkout (สร้างคำสั่งซื้อและ persist ลง database)
   async checkout(payload = {}) {
-    const result = await this.http.post("/api/cart/checkout", payload);
+    const requestBody = this.buildCheckoutRequestBody(payload);
+    const result = await this.http.post("/api/cart/checkout", requestBody);
     return {
       orderId: result?.orderId ?? result?.order?.id ?? "",
       message: result?.message ?? "สร้างคำสั่งซื้อแล้ว",

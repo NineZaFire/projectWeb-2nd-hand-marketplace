@@ -6,6 +6,7 @@ import { MyShopPage } from "../pages/MyShopPage";
 import { ProductDetailPage } from "../pages/ProductDetailPage";
 import { SearchProductsPage } from "../pages/SearchProductsPage";
 import { ChatPage } from "../pages/ChatPage";
+import { MyOrdersPage } from "../pages/MyOrdersPage";
 import { AuthService } from "../services/AuthService";
 import { DataModeSwitchWidget } from "./DataModeSwitchWidget";
 
@@ -20,7 +21,7 @@ export default class App extends React.Component {
   };
 
   auth = AuthService.instance();
-  appRoutes = new Set(["login", "register", "home", "myshop", "product", "search", "chat"]);
+  appRoutes = new Set(["login", "register", "home", "myshop", "product", "search", "chat", "orders"]);
 
   async componentDidMount() {
     if (typeof window !== "undefined") {
@@ -127,7 +128,18 @@ export default class App extends React.Component {
 
   // ✅ HomePage เรียกกลับมาเมื่อแก้โปรไฟล์สำเร็จ
   onUpdatedUser = (user) => this.setState({ user });
+  onDeletedAccount = () =>
+    this.navigate("login", {
+      patch: {
+        user: null,
+        selectedProduct: null,
+        searchKeyword: "",
+        selectedChatId: "",
+      },
+      replace: true,
+    });
   onGoMyShop = () => this.navigate("myshop");
+  onGoMyOrders = () => this.navigate("orders");
   onBackHome = () => this.navigate("home", { patch: { selectedProduct: null, selectedChatId: "" } });
   onOpenProduct = (product) =>
     this.navigate("product", { patch: { selectedProduct: product ?? null, selectedChatId: "" } });
@@ -204,7 +216,10 @@ export default class App extends React.Component {
           user={user}
           onBack={this.onBackHome}
           onGoMyShop={this.onGoMyShop}
+          onGoMyOrders={this.onGoMyOrders}
           onGoChat={this.onGoChat}
+          onUpdatedUser={this.onUpdatedUser}
+          onDeletedAccount={this.onDeletedAccount}
           onLogout={this.onLogout}
         />
       );
@@ -219,6 +234,7 @@ export default class App extends React.Component {
           onSubmitSearch={this.onOpenSearch}
           onOpenProduct={this.onOpenProduct}
           onGoMyShop={this.onGoMyShop}
+          onGoMyOrders={this.onGoMyOrders}
           onLogout={this.onLogout}
           onGoChat={this.onGoChat}
         />
@@ -234,6 +250,9 @@ export default class App extends React.Component {
           onGoHome={this.onBackHome}
           onOpenProduct={this.onOpenProduct}
           onGoMyShop={this.onGoMyShop}
+          onGoMyOrders={this.onGoMyOrders}
+          onUpdatedUser={this.onUpdatedUser}
+          onDeletedAccount={this.onDeletedAccount}
           onLogout={this.onLogout}
           onGoChat={this.onGoChat}
         />
@@ -251,6 +270,18 @@ export default class App extends React.Component {
       );
     }
 
+    if (route === "orders") {
+      return this.renderWithDataModeSwitch(
+        <MyOrdersPage
+          user={user}
+          onGoHome={this.onBackHome}
+          onGoMyShop={this.onGoMyShop}
+          onGoChat={this.onGoChat}
+          onLogout={this.onLogout}
+        />
+      );
+    }
+
     return this.renderWithDataModeSwitch(
       <HomePage
         user={user}
@@ -260,7 +291,9 @@ export default class App extends React.Component {
         onCart={() => console.log("cart")}
         onToggleMenu={() => console.log("menu")}
         onUpdatedUser={this.onUpdatedUser} // ✅ เพิ่ม
+        onDeletedAccount={this.onDeletedAccount}
         onGoMyShop={this.onGoMyShop}
+        onGoMyOrders={this.onGoMyOrders}
         onGoHome={this.onBackHome}
         onOpenProduct={this.onOpenProduct}
         onSubmitSearch={this.onOpenSearch}

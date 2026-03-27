@@ -13,8 +13,11 @@ export class ChatMessage {
     senderId,
     senderName,
     senderAvatarUrl,
+    type,
+    orderId,
     text,
     imageUrl,
+    meetupProposal,
     createdAt,
   } = {}) {
     this.id = id ?? "";
@@ -22,8 +25,21 @@ export class ChatMessage {
     this.senderId = senderId ?? "";
     this.senderName = senderName ?? "";
     this.senderAvatarUrl = senderAvatarUrl ?? "";
+    this.type = type ?? "text";
+    this.orderId = orderId ?? "";
     this.text = text ?? "";
     this.imageUrl = imageUrl ?? "";
+    this.meetupProposal = meetupProposal
+      ? {
+          location: safeText(meetupProposal.location),
+          status: safeText(meetupProposal.status),
+          proposedBy: safeText(meetupProposal.proposedBy),
+          proposedAt: toIsoString(meetupProposal.proposedAt),
+          responseLocation: safeText(meetupProposal.responseLocation),
+          respondedBy: safeText(meetupProposal.respondedBy),
+          respondedAt: toIsoString(meetupProposal.respondedAt),
+        }
+      : null;
     this.createdAt = toIsoString(createdAt);
   }
 
@@ -34,8 +50,11 @@ export class ChatMessage {
       senderId: json?.senderId ?? json?.fromUserId ?? "",
       senderName: json?.senderName ?? json?.fromName ?? "",
       senderAvatarUrl: json?.senderAvatarUrl ?? json?.fromAvatarUrl ?? "",
+      type: json?.type ?? json?.messageType ?? "text",
+      orderId: json?.orderId ?? "",
       text: json?.text ?? json?.message ?? "",
       imageUrl: json?.imageUrl ?? "",
+      meetupProposal: json?.meetupProposal ?? null,
       createdAt: json?.createdAt,
     });
   }
@@ -52,10 +71,42 @@ export class ChatMessage {
     return Boolean(safeText(this.imageUrl));
   }
 
+  isMeetupProposal() {
+    return safeText(this.type) === "meetup_proposal" && Boolean(this.meetupProposal);
+  }
+
   getPreviewText() {
+    if (this.isMeetupProposal()) {
+      return `ข้อเสนอนัดรับ: ${this.getMeetupProposalLocation()}`;
+    }
     if (this.hasText()) return safeText(this.text);
     if (this.hasImage()) return "ส่งรูปภาพ";
     return "ข้อความ";
+  }
+
+  getMeetupProposalLocation() {
+    if (!this.isMeetupProposal()) return "";
+    return safeText(this.meetupProposal?.responseLocation || this.meetupProposal?.location);
+  }
+
+  getMeetupProposalStatus() {
+    if (!this.isMeetupProposal()) return "";
+    return safeText(this.meetupProposal?.status);
+  }
+
+  getMeetupProposalStatusLabel() {
+    switch (this.getMeetupProposalStatus()) {
+      case "pending_seller_response":
+        return "รอคนขายตอบกลับ";
+      case "awaiting_meetup":
+        return "รอนัดพบ";
+      case "countered_by_seller":
+        return "คนขายเสนอเปลี่ยนสถานที่";
+      case "cancelled_by_seller":
+        return "ยกเลิกการนัดรับ";
+      default:
+        return this.getMeetupProposalStatus() || "ข้อเสนอนัดรับ";
+    }
   }
 
   getTimeLabel(locale = "th-TH") {

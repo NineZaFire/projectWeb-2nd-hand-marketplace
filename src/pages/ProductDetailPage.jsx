@@ -183,6 +183,11 @@ export class ProductDetailPage extends React.Component {
     this.props.onGoMyShop?.();
   };
 
+  goMyOrders = () => {
+    this.setState({ showProfilePopup: false });
+    this.props.onGoMyOrders?.();
+  };
+
   openCartPopup = async () => {
     this.setState({
       showCartPopup: true,
@@ -227,12 +232,12 @@ export class ProductDetailPage extends React.Component {
     this.props.onOpenProduct?.(item?.toProductPayload?.() ?? null);
   };
 
-  checkoutCart = async () => {
+  checkoutCart = async (checkoutPayload = {}) => {
     if (!this.state.cartItems.length) return;
 
     this.setState({ checkingOut: true, cartError: "", cartDone: "" });
     try {
-      const result = await this.cartService.checkout();
+      const result = await this.cartService.checkout(checkoutPayload);
       await this.loadCartItems();
       this.setState({
         cartDone: result?.message ?? "สั่งซื้อเรียบร้อย",
@@ -422,6 +427,7 @@ export class ProductDetailPage extends React.Component {
         {showCartPopup ? (
           <CartPopup
             items={cartItems}
+            buyer={this.props.user}
             loading={cartLoading}
             error={cartError}
             done={cartDone}
@@ -439,6 +445,7 @@ export class ProductDetailPage extends React.Component {
             user={this.props.user}
             onClose={this.closeProfilePopup}
             onGoMyShop={this.goMyShop}
+            onGoMyOrders={this.goMyOrders}
             onLogout={this.props.onLogout}
           />
         ) : null}

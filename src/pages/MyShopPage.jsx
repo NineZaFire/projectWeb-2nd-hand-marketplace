@@ -1,6 +1,8 @@
 import React from "react";
 import { MyShopService } from "../services/MyShopService";
+import { UserService } from "../services/UserService";
 import { ShopProduct } from "../models/ShopProduct";
+import { ShopProfile } from "../models/ShopProfile";
 import { ProductCategory } from "../models/ProductCategory";
 import { ProfilePopup } from "../components/HeaderActionPopups";
 
@@ -16,6 +18,7 @@ export class MyShopPage extends React.Component {
     showEditPopup: false,
     showDeleteConfirmPopup: false,
     showProfilePopup: false,
+    showEditModal: false,
     draftProduct: ShopProduct.empty(),
     editDraftProduct: ShopProduct.empty(),
     deletingProduct: null,
@@ -23,17 +26,33 @@ export class MyShopPage extends React.Component {
     imagePreviewUrls: [],
     editImageFiles: [],
     editImagePreviewUrls: [],
+    shopLoading: true,
+    shopDraft: ShopProfile.empty(),
+    shopQrFile: null,
+    shopQrPreviewUrl: "",
+    shopSaving: false,
+    shopError: "",
+    shopDone: "",
+    profileDraft: null,
+    profileAvatarFile: null,
+    profileAvatarPreviewUrl: "",
+    profileSaving: false,
+    profileDeleting: false,
+    profileError: "",
   };
 
   myShopService = MyShopService.instance();
+  userService = UserService.instance();
 
   async componentDidMount() {
-    await this.loadProducts();
+    await Promise.all([this.loadProducts(), this.loadShopProfile()]);
   }
 
   componentWillUnmount() {
     this.revokePreviewUrls(this.state.imagePreviewUrls);
     this.revokePreviewUrls(this.state.editImagePreviewUrls);
+    this.revokePreviewUrls([this.state.shopQrPreviewUrl].filter(Boolean));
+    this.revokePreviewUrls([this.state.profileAvatarPreviewUrl].filter(Boolean));
   }
 
   revokePreviewUrls = (previewUrls = []) => {
@@ -60,6 +79,22 @@ export class MyShopPage extends React.Component {
       });
     } finally {
       this.setState({ loading: false });
+    }
+  };
+
+  loadShopProfile = async () => {
+    this.setState({ shopLoading: true, shopError: "" });
+    try {
+      const { shop } = await this.myShopService.me();
+      this.setState({
+        shopDraft: shop ?? ShopProfile.empty(),
+      });
+    } catch (e) {
+      this.setState({
+        shopError: e?.message ?? "โหลดข้อมูลร้านค้าไม่สำเร็จ",
+      });
+    } finally {
+      this.setState({ shopLoading: false });
     }
   };
 
@@ -95,9 +130,151 @@ export class MyShopPage extends React.Component {
     this.setState({ showProfilePopup: false });
   };
 
+  openEditModal = () => {
+    this.revokePreviewUrls([this.state.profileAvatarPreviewUrl].filter(Boolean));
+    this.setState({
+      showProfilePopup: false,
+      showEditModal: true,
+      profileDraft: { ...(this.props.user ?? {}) },
+      profileAvatarFile: null,
+      profileAvatarPreviewUrl: "",
+      profileError: "",
+    });
+  };
+
+  closeEditModal = () => {
+    this.revokePreviewUrls([this.state.profileAvatarPreviewUrl].filter(Boolean));
+    this.setState({
+      showEditModal: false,
+      profileDraft: null,
+      profileAvatarFile: null,
+      profileAvatarPreviewUrl: "",
+      profileError: "",
+    });
+  };
+
   goMyShop = () => {
     this.setState({ showProfilePopup: false });
     this.props.onGoMyShop?.();
+  };
+
+  goMyOrders = () => {
+    this.setState({ showProfilePopup: false });
+    this.props.onGoMyOrders?.();
+  };
+
+  setProfileDraftField = (key, value) => {
+    this.setState((s) => ({
+      profileDraft: { ...s.profileDraft, [key]: value },
+      profileError: "",
+    }));
+  };
+
+  setProfileAvatarFile = (file) => {
+    this.revokePreviewUrls([this.state.profileAvatarPreviewUrl].filter(Boolean));
+    const nextFile = file ?? null;
+    const profileAvatarPreviewUrl =
+      nextFile && typeof URL !== "undefined" ? URL.createObjectURL(nextFile) : "";
+
+    this.setState({ profileAvatarFile: nextFile, profileAvatarPreviewUrl, profileError: "" });
+  };
+
+  setShopDraftField = (key, value) => {
+    this.setState((state) => ({
+      shopDraft: state.shopDraft.withPatch({ [key]: value }),
+      shopError: "",
+      shopDone: "",
+    }));
+  };
+
+  setShopQrFile = (file) => {
+    this.revokePreviewUrls([this.state.shopQrPreviewUrl].filter(Boolean));
+    const nextFile = file ?? null;
+    const shopQrPreviewUrl =
+      nextFile && typeof URL !== "undefined" ? URL.createObjectURL(nextFile) : "";
+
+    this.setState({
+      shopQrFile: nextFile,
+      shopQrPreviewUrl,
+      shopError: "",
+      shopDone: "",
+    });
+  };
+
+  saveShopProfile = async () => {
+    const { shopDraft, shopQrFile } = this.state;
+    this.setState({ shopSaving: true, shopError: "", shopDone: "" });
+    try {
+      const result = await this.myShopService.upsert(shopDraft.toPayload(), {
+        parcelQrFile: shopQrFile,
+      });
+      const updatedShop = result?.shop ?? ShopProfile.empty();
+
+      this.revokePreviewUrls([this.state.shopQrPreviewUrl].filter(Boolean));
+      this.setState({
+        shopDraft: updatedShop,
+        shopQrFile: null,
+        shopQrPreviewUrl: "",
+        shopDone: "บันทึกข้อมูลร้านและ QR code เรียบร้อย",
+      });
+    } catch (e) {
+      this.setState({ shopError: e?.message ?? "บันทึกข้อมูลร้านไม่สำเร็จ" });
+    } finally {
+      this.setState({ shopSaving: false });
+    }
+  };
+
+  saveProfile = async () => {
+    const { profileDraft, profileAvatarFile, profileAvatarPreviewUrl } = this.state;
+    this.setState({ profileSaving: true, profileError: "" });
+    try {
+      const editablePayload = {
+        name: profileDraft?.name ?? "",
+        email: profileDraft?.email ?? "",
+        phone: profileDraft?.phone ?? "",
+        address: profileDraft?.address ?? "",
+      };
+
+      const result = profileAvatarFile
+        ? await this.userService.updateMeFormData(editablePayload, profileAvatarFile)
+        : await this.userService.updateMe(editablePayload);
+      const updated = result?.user;
+      if (!updated) throw new Error("อัปเดตไม่สำเร็จ");
+
+      this.props.onUpdatedUser?.(updated);
+      this.revokePreviewUrls([profileAvatarPreviewUrl].filter(Boolean));
+      this.setState({
+        showEditModal: false,
+        profileDraft: { ...updated },
+        profileAvatarFile: null,
+        profileAvatarPreviewUrl: "",
+        profileError: "",
+      });
+    } catch (e) {
+      this.setState({ profileError: e?.message ?? "เกิดข้อผิดพลาด" });
+    } finally {
+      this.setState({ profileSaving: false });
+    }
+  };
+
+  deleteAccount = async () => {
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm("ยืนยันลบบัญชีนี้? การดำเนินการนี้ไม่สามารถย้อนกลับได้");
+      if (!confirmed) return;
+    }
+
+    const { profileAvatarPreviewUrl } = this.state;
+    this.setState({ profileDeleting: true, profileError: "" });
+    try {
+      await this.userService.deleteMe();
+      this.revokePreviewUrls([profileAvatarPreviewUrl].filter(Boolean));
+      this.props.onDeletedAccount?.();
+    } catch (e) {
+      this.setState({
+        profileDeleting: false,
+        profileError: e?.message ?? "ลบบัญชีไม่สำเร็จ",
+      });
+    }
   };
 
   setDraftField = (key, value) => {
@@ -355,6 +532,7 @@ export class MyShopPage extends React.Component {
       showEditPopup,
       showDeleteConfirmPopup,
       showProfilePopup,
+      showEditModal,
       draftProduct,
       editDraftProduct,
       deletingProduct,
@@ -362,6 +540,19 @@ export class MyShopPage extends React.Component {
       imagePreviewUrls,
       editImageFiles,
       editImagePreviewUrls,
+      shopLoading,
+      shopDraft,
+      shopQrFile,
+      shopQrPreviewUrl,
+      shopSaving,
+      shopError,
+      shopDone,
+      profileDraft,
+      profileAvatarFile,
+      profileAvatarPreviewUrl,
+      profileSaving,
+      profileDeleting,
+      profileError,
     } = this.state;
 
     return (
@@ -431,6 +622,19 @@ export class MyShopPage extends React.Component {
               </div>
             </div>
 
+            <ShopSettingsCard
+              shop={shopDraft}
+              loading={shopLoading}
+              saving={shopSaving}
+              error={shopError}
+              done={shopDone}
+              qrFile={shopQrFile}
+              qrPreviewUrl={shopQrPreviewUrl}
+              onChangeField={this.setShopDraftField}
+              onChangeQrFile={this.setShopQrFile}
+              onSave={this.saveShopProfile}
+            />
+
             {loading ? <div className="text-sm text-zinc-500">กำลังโหลด...</div> : null}
             {error && !showCreatePopup && !showEditPopup ? (
               <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</div>
@@ -482,11 +686,134 @@ export class MyShopPage extends React.Component {
           <ProfilePopup
             user={user}
             onClose={this.closeProfilePopup}
-            onGoMyShop={this.goMyShop}
+            onEdit={this.openEditModal}
+            showGoMyShopButton={false}
+            onGoMyOrders={this.goMyOrders}
             onLogout={this.props.onLogout}
           />
         ) : null}
+
+        {showEditModal && profileDraft ? (
+          <EditProfileModal
+            user={profileDraft}
+            saving={profileSaving}
+            error={profileError}
+            avatarFile={profileAvatarFile}
+            avatarPreviewUrl={profileAvatarPreviewUrl}
+            onClose={this.closeEditModal}
+            onChangeField={this.setProfileDraftField}
+            onChangeAvatarFile={this.setProfileAvatarFile}
+            onSave={this.saveProfile}
+            onDelete={this.deleteAccount}
+            deleting={profileDeleting}
+          />
+        ) : null}
       </div>
+    );
+  }
+}
+
+class ShopSettingsCard extends React.Component {
+  render() {
+    const {
+      shop,
+      loading,
+      saving,
+      error,
+      done,
+      qrFile,
+      qrPreviewUrl,
+      onChangeField,
+      onChangeQrFile,
+      onSave,
+    } = this.props;
+
+    const qrImageUrl = qrPreviewUrl || shop?.parcelQrCodeUrl || "";
+
+    return (
+      <section className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-base font-semibold text-zinc-900">ข้อมูลร้านและการรับชำระ</div>
+            <div className="text-sm text-zinc-500">
+              ใช้เป็นโครงสำหรับการส่งพัสดุ โดย popup ตะกร้าจะดึง QR code ของร้านจากส่วนนี้
+            </div>
+          </div>
+          <button
+            type="button"
+            className="rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            onClick={onSave}
+            disabled={saving || loading}
+          >
+            {saving ? "กำลังบันทึก..." : "บันทึกข้อมูลร้าน"}
+          </button>
+        </div>
+
+        {loading ? <div className="text-sm text-zinc-500">กำลังโหลดข้อมูลร้าน...</div> : null}
+        {error ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
+        ) : null}
+        {done ? (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{done}</div>
+        ) : null}
+
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label className="space-y-1">
+              <div className="text-sm text-zinc-600">ชื่อร้าน</div>
+              <input
+                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none"
+                value={shop?.shopName ?? ""}
+                onChange={(e) => onChangeField?.("shopName", e.target.value)}
+              />
+            </label>
+
+            <label className="space-y-1">
+              <div className="text-sm text-zinc-600">ช่องทางติดต่อ</div>
+              <input
+                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none"
+                value={shop?.contact ?? ""}
+                onChange={(e) => onChangeField?.("contact", e.target.value)}
+              />
+            </label>
+
+            <label className="space-y-1 md:col-span-2">
+              <div className="text-sm text-zinc-600">คำอธิบายร้าน</div>
+              <textarea
+                className="min-h-24 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none"
+                value={shop?.description ?? ""}
+                onChange={(e) => onChangeField?.("description", e.target.value)}
+              />
+            </label>
+
+            <label className="space-y-1 md:col-span-2">
+              <div className="text-sm text-zinc-600">อัปโหลด QR code สำหรับรับชำระแบบส่งพัสดุ</div>
+              <input
+                type="file"
+                accept="image/*"
+                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5"
+                onChange={(e) => onChangeQrFile?.(e.target.files?.[0] ?? null)}
+              />
+              <div className="text-xs text-zinc-500">
+                {qrFile ? `ไฟล์ใหม่: ${qrFile.name}` : "ถ้ายังไม่อัปโหลด ผู้ซื้อจะไม่สามารถเลือกส่งพัสดุได้"}
+              </div>
+            </label>
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-sm font-medium text-zinc-700">ตัวอย่าง QR code ร้าน</div>
+            <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+              {qrImageUrl ? (
+                <img src={qrImageUrl} alt="shop-qr-code" className="aspect-square w-full object-contain" />
+              ) : (
+                <div className="grid aspect-square place-items-center px-4 text-center text-sm text-zinc-400">
+                  ยังไม่มี QR code สำหรับการส่งพัสดุ
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
     );
   }
 }
@@ -912,6 +1239,126 @@ class DeleteProductConfirmModal extends React.Component {
           </div>
         </div>
       </div>
+    );
+  }
+}
+
+class EditProfileModal extends React.Component {
+  stop = (e) => e.stopPropagation();
+
+  render() {
+    const {
+      user,
+      saving,
+      deleting,
+      error,
+      avatarFile,
+      avatarPreviewUrl,
+      onClose,
+      onChangeField,
+      onChangeAvatarFile,
+      onSave,
+      onDelete,
+    } = this.props;
+    const displayAvatarUrl = avatarPreviewUrl || user?.avatarUrl || "";
+
+    return (
+      <div className="fixed inset-0 z-[60] bg-black/40 overflow-y-auto hide-scrollbar p-4" onClick={onClose}>
+        <div
+          className="mx-auto my-4 w-full max-w-3xl max-h-[calc(100dvh-2rem)] overflow-y-auto hide-scrollbar rounded-3xl bg-white shadow p-4 md:p-6 space-y-6"
+          onClick={this.stop}
+        >
+          <div className="flex items-center justify-between">
+            <div className="text-2xl font-semibold">บัญชีของฉัน</div>
+            <button
+              className="h-10 w-10 rounded-xl border border-zinc-200 grid place-items-center"
+              onClick={onClose}
+              title="ปิด"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <label className="group relative block h-20 w-20 cursor-pointer overflow-hidden rounded-full bg-zinc-200 ring-4 ring-white">
+              {displayAvatarUrl ? (
+                <img src={displayAvatarUrl} alt="avatar" className="h-full w-full object-cover" />
+              ) : (
+                <span className="grid h-full w-full place-items-center text-zinc-600">👤</span>
+              )}
+              <div className="absolute inset-0 grid place-items-center bg-black/45 text-center text-[11px] font-semibold text-white opacity-0 transition group-hover:opacity-100">
+                กดเพื่อเปลี่ยนรูป
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => onChangeAvatarFile?.(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            <div className="space-y-1">
+              <div className="text-3xl font-semibold">{user?.name || "User"}</div>
+              <div className="text-sm text-zinc-500">กดที่รูปเพื่ออัปโหลดและแก้ไขรูปโปรไฟล์</div>
+              {avatarFile ? <div className="text-xs text-zinc-500">{avatarFile.name}</div> : null}
+            </div>
+          </div>
+
+          {error ? <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
+
+          <div className="space-y-3">
+            <div className="text-2xl font-semibold text-zinc-800">ข้อมูลบัญชี</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Field label="ชื่อที่แสดง" value={user?.name} onChange={(v) => onChangeField("name", v)} />
+              <Field label="อีเมล" value={user?.email} onChange={(v) => onChangeField("email", v)} />
+              <Field label="เบอร์โทร" value={user?.phone} onChange={(v) => onChangeField("phone", v)} />
+              <Field label="ที่อยู่" value={user?.address} onChange={(v) => onChangeField("address", v)} full />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <button
+              className="rounded-xl border border-red-200 px-4 py-2 font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
+              onClick={onDelete}
+              disabled={saving || deleting}
+            >
+              {deleting ? "กำลังลบบัญชี..." : "ลบบัญชี"}
+            </button>
+            <div className="flex gap-2">
+              <button
+                className="rounded-xl border border-zinc-200 px-4 py-2 font-medium"
+                onClick={onClose}
+                disabled={saving || deleting}
+              >
+                ยกเลิก
+              </button>
+              <button
+                className="rounded-xl bg-[#F4D03E] text-black px-4 py-2 font-semibold disabled:opacity-60"
+                onClick={onSave}
+                disabled={saving || deleting}
+              >
+                {saving ? "กำลังบันทึก..." : "บันทึก"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+}
+
+class Field extends React.Component {
+  render() {
+    const { label, value, disabled, onChange, full } = this.props;
+    return (
+      <label className={`space-y-1 ${full ? "md:col-span-2" : ""}`}>
+        <div className="text-sm font-medium text-zinc-600">{label}</div>
+        <input
+          className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none disabled:bg-zinc-100"
+          value={value ?? ""}
+          disabled={disabled}
+          onChange={(e) => onChange?.(e.target.value)}
+        />
+      </label>
     );
   }
 }

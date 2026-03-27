@@ -3,6 +3,10 @@ import { UserService } from "../services/UserService";
 import { MyShopService } from "../services/MyShopService";
 import { ProductCategory } from "../models/ProductCategory";
 import { CartService } from "../services/CartService";
+import {
+  CartPopup as HeaderCartPopup,
+  ProfilePopup as HeaderProfilePopup,
+} from "../components/HeaderActionPopups";
 
 export class HomePage extends React.Component {
   state = {
@@ -11,7 +15,9 @@ export class HomePage extends React.Component {
     showEditModal: false,
     draft: null,
     avatarFile: null,
+    avatarPreviewUrl: "",
     saving: false,
+    deletingAccount: false,
     error: "",
     cartLoading: false,
     cartError: "",
@@ -32,6 +38,19 @@ export class HomePage extends React.Component {
   async componentDidMount() {
     await this.loadMarketplaceProducts();
   }
+
+  componentWillUnmount() {
+    this.revokePreviewUrl(this.state.avatarPreviewUrl);
+  }
+
+  revokePreviewUrl = (previewUrl) => {
+    if (!previewUrl || typeof URL === "undefined") return;
+    try {
+      URL.revokeObjectURL(previewUrl);
+    } catch {
+      // ignore cleanup error
+    }
+  };
 
   loadMarketplaceProducts = async () => {
     this.setState({ loadingProducts: true, productsError: "" });
@@ -63,20 +82,24 @@ export class HomePage extends React.Component {
   };
 
   openEditModal = () => {
+    this.revokePreviewUrl(this.state.avatarPreviewUrl);
     this.setState({
       showProfilePopup: false,
       showEditModal: true,
       draft: { ...(this.props.user ?? {}) },
       avatarFile: null,
+      avatarPreviewUrl: "",
       error: "",
     });
   };
 
   closeEditModal = () => {
+    this.revokePreviewUrl(this.state.avatarPreviewUrl);
     this.setState({
       showEditModal: false,
       draft: null,
       avatarFile: null,
+      avatarPreviewUrl: "",
       error: "",
     });
   };
@@ -84,6 +107,11 @@ export class HomePage extends React.Component {
   goMyShop = () => {
     this.setState({ showProfilePopup: false });
     this.props.onGoMyShop?.();
+  };
+
+  goMyOrders = () => {
+    this.setState({ showProfilePopup: false });
+    this.props.onGoMyOrders?.();
   };
 
   openCartPopup = async () => {
@@ -131,12 +159,12 @@ export class HomePage extends React.Component {
     this.props.onOpenProduct?.(item?.toProductPayload?.() ?? null);
   };
 
-  checkoutCart = async () => {
+  checkoutCart = async (checkoutPayload = {}) => {
     if (!this.state.cartItems.length) return;
 
     this.setState({ checkingOut: true, cartError: "", cartDone: "" });
     try {
-      const result = await this.cartService.checkout();
+      const result = await this.cartService.checkout(checkoutPayload);
       await this.loadCartItems();
       this.setState({
         cartDone: result?.message ?? "สั่งซื้อเรียบร้อย",
@@ -169,7 +197,12 @@ export class HomePage extends React.Component {
   };
 
   setAvatarFile = (file) => {
-    this.setState({ avatarFile: file ?? null, error: "" });
+    this.revokePreviewUrl(this.state.avatarPreviewUrl);
+    const nextFile = file ?? null;
+    const avatarPreviewUrl =
+      nextFile && typeof URL !== "undefined" ? URL.createObjectURL(nextFile) : "";
+
+    this.setState({ avatarFile: nextFile, avatarPreviewUrl, error: "" });
   };
 
   onSearchChange = (value) => {
@@ -204,13 +237,12 @@ export class HomePage extends React.Component {
   }
 
   saveProfile = async () => {
-    const { draft, avatarFile } = this.state;
+    const { draft, avatarFile, avatarPreviewUrl } = this.state;
     this.setState({ saving: true, error: "" });
     try {
       const editablePayload = {
         name: draft?.name ?? "",
         email: draft?.email ?? "",
-        avatarUrl: draft?.avatarUrl ?? "",
         phone: draft?.phone ?? "",
         address: draft?.address ?? "",
       };
@@ -222,16 +254,38 @@ export class HomePage extends React.Component {
       if (!updated) throw new Error("อัปเดตไม่สำเร็จ");
 
       this.props.onUpdatedUser?.(updated);
+      this.revokePreviewUrl(avatarPreviewUrl);
       this.setState({
         showEditModal: false,
         draft: { ...updated },
         avatarFile: null,
+        avatarPreviewUrl: "",
         error: "",
       });
     } catch (e) {
       this.setState({ error: e?.message ?? "เกิดข้อผิดพลาด" });
     } finally {
       this.setState({ saving: false });
+    }
+  };
+
+  deleteAccount = async () => {
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm("ยืนยันลบบัญชีนี้? การดำเนินการนี้ไม่สามารถย้อนกลับได้");
+      if (!confirmed) return;
+    }
+
+    const { avatarPreviewUrl } = this.state;
+    this.setState({ deletingAccount: true, error: "" });
+    try {
+      await this.userService.deleteMe();
+      this.revokePreviewUrl(avatarPreviewUrl);
+      this.props.onDeletedAccount?.();
+    } catch (e) {
+      this.setState({
+        deletingAccount: false,
+        error: e?.message ?? "ลบบัญชีไม่สำเร็จ",
+      });
     }
   };
 
@@ -242,8 +296,10 @@ export class HomePage extends React.Component {
       showEditModal,
       draft,
       saving,
+      deletingAccount,
       error,
       avatarFile,
+      avatarPreviewUrl,
       cartLoading,
       cartError,
       cartDone,
@@ -309,9 +365,6 @@ export class HomePage extends React.Component {
           </div>
         </div>
 
-        <div className="mx-auto max-w-7xl px-4 py-6 space-y-6">
-          <HomeBanner />
-        </div>
         <div className="mx-auto max-w-375 px-4 py-6 space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-[15rem_minmax(0,1fr)] gap-6">
             <CategorySidebar
@@ -334,7 +387,7 @@ export class HomePage extends React.Component {
               ) : null}
 
               {!loadingProducts && filteredProducts.length ? (
-                <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-4">
                   {filteredProducts.map((product, index) => (
                     <HomeProductCard
                       key={product.id || `${product.name}-${index}`}
@@ -349,8 +402,9 @@ export class HomePage extends React.Component {
         </div>
 
         {showCartPopup ? (
-          <CartPopup
+          <HeaderCartPopup
             items={cartItems}
+            buyer={user}
             loading={cartLoading}
             error={cartError}
             done={cartDone}
@@ -364,11 +418,12 @@ export class HomePage extends React.Component {
         ) : null}
 
         {showProfilePopup ? (
-          <ProfilePopup
+          <HeaderProfilePopup
             user={user}
             onClose={this.closeProfilePopup}
             onEdit={this.openEditModal}
             onGoMyShop={this.goMyShop}
+            onGoMyOrders={this.goMyOrders}
             onLogout={this.props.onLogout}
           />
         ) : null}
@@ -379,10 +434,13 @@ export class HomePage extends React.Component {
             saving={saving}
             error={error}
             avatarFile={avatarFile}
+            avatarPreviewUrl={avatarPreviewUrl}
             onClose={this.closeEditModal}
             onChangeField={this.setDraftField}
             onChangeAvatarFile={this.setAvatarFile}
             onSave={this.saveProfile}
+            onDelete={this.deleteAccount}
+            deleting={deletingAccount}
           />
         ) : null}
       </div>
@@ -418,24 +476,6 @@ class CategorySidebar extends React.Component {
   }
 }
 
-class HomeBanner extends React.Component {
-  render() {
-    return (
-      <section className="rounded-xl bg-gradient-to-r from-cyan-300 via-sky-300 to-emerald-300 p-6 md:p-8 shadow">
-        <div className="max-w-xl space-y-20">
-          <div className="inline-flex rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-zinc-700">
-            Banner โฆษณา
-          </div>
-          <h1 className="text-2xl md:text-3xl font-bold text-zinc-900">พื้นที่แบนเนอร์สำหรับโปรโมชันและกิจกรรมร้านค้า</h1>
-          <p className="text-sm md:text-base text-zinc-800/90">
-            โครงสำหรับวางภาพโฆษณา, ข้อความโปรโมชัน และลิงก์ไปยังหน้ารายละเอียดแคมเปญ
-          </p>
-        </div>
-      </section>
-    );
-  }
-}
-
 class HomeProductCard extends React.Component {
   render() {
     const { product, onOpenProduct } = this.props;
@@ -467,184 +507,24 @@ class HomeProductCard extends React.Component {
   }
 }
 
-class CartPopup extends React.Component {
-  stop = (e) => e.stopPropagation();
-
-  render() {
-    const {
-      items,
-      loading,
-      error,
-      done,
-      checkingOut,
-      totalLabel,
-      onClose,
-      onOpenItem,
-      onRemoveItem,
-      onCheckout,
-    } = this.props;
-
-    return (
-      <div className="fixed inset-0 z-50" onClick={onClose}>
-        <div
-          className="absolute right-5 top-23 w-[28rem] max-w-[calc(100vw-2rem)]"
-          onClick={this.stop}
-        >
-        <div className="rounded-3xl border border-zinc-200 bg-white shadow-xl p-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="text-base font-semibold text-zinc-900">ตะกร้าสินค้า</div>
-              
-            </div>
-
-            {loading ? <div className="text-sm text-zinc-500">กำลังโหลดตะกร้าสินค้า...</div> : null}
-            {error ? (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                {error}
-              </div>
-            ) : null}
-            {done ? (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
-                {done}
-              </div>
-            ) : null}
-
-            {!loading && !items?.length ? (
-              <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-4 text-center text-sm text-zinc-500">
-                ยังไม่มีสินค้าในตะกร้า
-              </div>
-            ) : null}
-
-            {!loading && items?.length ? (
-              <div className="max-h-72 space-y-2 overflow-y-auto hide-scrollbar pr-1">
-                {items.map((item, index) => (
-                  <div
-                    key={item.id || item.productId || `${item.name}-${index}`}
-                    className="flex items-center gap-2 rounded-xl border border-zinc-200 p-2"
-                  >
-                    <button
-                      type="button"
-                      className="flex flex-1 items-center gap-3 text-left"
-                      onClick={() => onOpenItem?.(item)}
-                      title="ดูหน้าสินค้า"
-                    >
-                      <div className="h-16 w-16 shrink-0 rounded-lg bg-zinc-100 overflow-hidden grid place-items-center">
-                        {item?.imageUrl ? (
-                          <img
-                            src={item.imageUrl}
-                            alt={item?.name ?? "cart-item"}
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <span className="text-xs text-zinc-400">ไม่มีรูป</span>
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="line-clamp-2 text-sm font-semibold text-zinc-800 break-words">
-                          {item?.name || "ไม่ระบุชื่อสินค้า"}
-                        </div>
-                        <div className="text-xs text-zinc-500">
-                          {item?.getPriceLabel?.() ?? "฿0.00"} x {item?.quantity ?? 1}
-                        </div>
-                        <div className="text-sm font-medium text-zinc-700">
-                          {item?.getLineTotalLabel?.() ?? "฿0.00"}
-                        </div>
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      className="rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
-                      onClick={() => onRemoveItem?.(item)}
-                    >
-                      ลบ
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-
-            <div className="rounded-xl bg-zinc-50 px-3 py-2.5 text-sm text-zinc-700">
-              รวมทั้งหมด: <span className="font-semibold text-zinc-900">{totalLabel}</span>
-            </div>
-
-            <div className="flex justify-end">
-              <button
-                type="button"
-                className="rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-                disabled={checkingOut || !items?.length}
-                onClick={onCheckout}
-              >
-                {checkingOut ? "กำลังสั่งซื้อ..." : "สั่งซื้อ"}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-}
-
-class ProfilePopup extends React.Component {
-  stop = (e) => e.stopPropagation();
-
-  render() {
-    const { user, onClose, onEdit, onGoMyShop, onLogout } = this.props;
-
-    return (
-      <div className="fixed inset-0 z-50" onClick={onClose}>
-        <div className="absolute right-5 top-23 w-[20rem] max-w-[calc(100vw-2rem)]" onClick={this.stop}>
-        <div className="rounded-3xl border border-zinc-200 bg-white shadow-xl p-4 space-y-4">
-            <div className="rounded-2xl bg-zinc-50 p-3">
-              <div className="flex items-center gap-3">
-                <div className="h-12 w-12 rounded-full bg-zinc-200 overflow-hidden grid place-items-center">
-                  {user?.avatarUrl ? (
-                    <img src={user.avatarUrl} alt="avatar" className="h-full w-full object-cover" />
-                  ) : (
-                    <span className="text-zinc-600">👤</span>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <div className="font-semibold truncate">{user?.name || "User"}</div>
-                    <button
-                      className="h-7 w-7 rounded-lg bg-zinc-900 text-white grid place-items-center text-xs"
-                      onClick={onEdit}
-                      title="แก้ไขโปรไฟล์"
-                    >
-                      ✎
-                    </button>
-                  </div>
-                  <div className="text-xs text-zinc-500 truncate">{user?.email || ""}</div>
-                </div>
-              </div>
-            </div>
-
-            <button
-              className="w-full rounded-xl bg-zinc-900 text-white px-3 py-2.5 text-sm font-semibold"
-              onClick={onGoMyShop}
-            >
-              ลงขาย
-            </button>
-
-            <button
-              className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
-              onClick={onLogout}
-            >
-              Log out
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-}
-
 class EditProfileModal extends React.Component {
   stop = (e) => e.stopPropagation();
 
   render() {
-    const { user, saving, error, avatarFile, onClose, onChangeField, onChangeAvatarFile, onSave } = this.props;
-    const idCard = user?.idCard ?? {};
+    const {
+      user,
+      saving,
+      deleting,
+      error,
+      avatarFile,
+      avatarPreviewUrl,
+      onClose,
+      onChangeField,
+      onChangeAvatarFile,
+      onSave,
+      onDelete,
+    } = this.props;
+    const displayAvatarUrl = avatarPreviewUrl || user?.avatarUrl || "";
 
     return (
       <div className="fixed inset-0 z-[60] bg-black/40 overflow-y-auto hide-scrollbar p-4" onClick={onClose}>
@@ -664,14 +544,29 @@ class EditProfileModal extends React.Component {
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="h-16 w-16 rounded-full bg-zinc-200 overflow-hidden grid place-items-center">
-              {user?.avatarUrl ? (
-                <img src={user.avatarUrl} alt="avatar" className="h-full w-full object-cover" />
+            <label className="group relative block h-20 w-20 cursor-pointer overflow-hidden rounded-full bg-zinc-200 ring-4 ring-white">
+              {displayAvatarUrl ? (
+                <img src={displayAvatarUrl} alt="avatar" className="h-full w-full object-cover" />
               ) : (
-                <span className="text-zinc-600">👤</span>
+                <span className="grid h-full w-full place-items-center text-zinc-600">👤</span>
               )}
+              <div className="absolute inset-0 grid place-items-center bg-black/45 text-center text-[11px] font-semibold text-white opacity-0 transition group-hover:opacity-100">
+                กดเพื่อเปลี่ยนรูป
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => onChangeAvatarFile?.(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            <div className="space-y-1">
+              <div className="text-3xl font-semibold">{user?.name || "User"}</div>
+              <div className="text-sm text-zinc-500">
+                กดที่รูปเพื่ออัปโหลดและแก้ไขรูปโปรไฟล์
+              </div>
+              {avatarFile ? <div className="text-xs text-zinc-500">{avatarFile.name}</div> : null}
             </div>
-            <div className="text-3xl font-semibold">{user?.name || "User"}</div>
           </div>
 
           {error ? <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
@@ -682,46 +577,34 @@ class EditProfileModal extends React.Component {
               <Field label="ชื่อที่แสดง" value={user?.name} onChange={(v) => onChangeField("name", v)} />
               <Field label="อีเมล" value={user?.email} onChange={(v) => onChangeField("email", v)} />
               <Field label="เบอร์โทร" value={user?.phone} onChange={(v) => onChangeField("phone", v)} />
-              <Field
-                label="ลิงก์รูปโปรไฟล์ (URL)"
-                value={user?.avatarUrl}
-                onChange={(v) => onChangeField("avatarUrl", v)}
-              />
-              <FileField
-                label="อัปโหลดรูปโปรไฟล์ (ไฟล์)"
-                value={avatarFile}
-                onChange={onChangeAvatarFile}
-              />
               <Field label="ที่อยู่" value={user?.address} onChange={(v) => onChangeField("address", v)} full />
             </div>
           </div>
 
-          <div className="space-y-3">
-            <div className="text-2xl font-semibold text-zinc-800">ข้อมูลบัตรประชาชน</div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Field label="เลขบัตรประชาชน" value={idCard.citizenId} disabled />
-              <Field label="คำนำหน้า" value={idCard.title} disabled />
-              <Field label="ชื่อ" value={idCard.firstName} disabled />
-              <Field label="นามสกุล" value={idCard.lastName} disabled />
-              <Field label="วันเกิด" value={idCard.dob} disabled />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <button
+              className="rounded-xl border border-red-200 px-4 py-2 font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
+              onClick={onDelete}
+              disabled={saving || deleting}
+            >
+              {deleting ? "กำลังลบบัญชี..." : "ลบบัญชี"}
+            </button>
+            <div className="flex gap-2">
+              <button
+                className="rounded-xl border border-zinc-200 px-4 py-2 font-medium"
+                onClick={onClose}
+                disabled={saving || deleting}
+              >
+                ยกเลิก
+              </button>
+              <button
+                className="rounded-xl bg-[#F4D03E] text-black px-4 py-2 font-semibold disabled:opacity-60"
+                onClick={onSave}
+                disabled={saving || deleting}
+              >
+                {saving ? "กำลังบันทึก..." : "บันทึก"}
+              </button>
             </div>
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <button
-              className="rounded-xl border border-zinc-200 px-4 py-2 font-medium"
-              onClick={onClose}
-              disabled={saving}
-            >
-              ยกเลิก
-            </button>
-            <button
-              className="rounded-xl bg-[#F4D03E] text-black px-4 py-2 font-semibold disabled:opacity-60"
-              onClick={onSave}
-              disabled={saving}
-            >
-              {saving ? "กำลังบันทึก..." : "บันทึก"}
-            </button>
           </div>
         </div>
       </div>
@@ -741,24 +624,6 @@ class Field extends React.Component {
           disabled={disabled}
           onChange={(e) => onChange?.(e.target.value)}
         />
-      </label>
-    );
-  }
-}
-
-class FileField extends React.Component {
-  render() {
-    const { label, onChange, value } = this.props;
-    return (
-      <label className="space-y-1">
-        <div className="text-sm font-medium text-zinc-600">{label}</div>
-        <input
-          type="file"
-          accept="image/*"
-          className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5"
-          onChange={(e) => onChange?.(e.target.files?.[0] ?? null)}
-        />
-        {value ? <div className="text-xs text-zinc-500 truncate">{value.name}</div> : null}
       </label>
     );
   }

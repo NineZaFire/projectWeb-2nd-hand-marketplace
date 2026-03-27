@@ -16,6 +16,9 @@ export class ChatPage extends React.Component {
     draftImageFile: null,
     sending: false,
     sendingError: "",
+    proposalActionLoadingId: "",
+    proposalActionError: "",
+    proposalActionErrorMessageId: "",
   };
 
   chatService = ChatService.instance();
@@ -114,6 +117,37 @@ export class ChatPage extends React.Component {
     this.setState({ draftImageFile: null });
   };
 
+  respondMeetupProposal = async ({ messageId, action, location } = {}) => {
+    const chatId = safeText(this.state.selectedChatId);
+    const normalizedMessageId = safeText(messageId);
+    if (!chatId || !normalizedMessageId) return;
+
+    this.setState({
+      proposalActionLoadingId: normalizedMessageId,
+      proposalActionError: "",
+      proposalActionErrorMessageId: "",
+    });
+
+    try {
+      await this.chatService.respondMeetupProposal({
+        chatId,
+        messageId: normalizedMessageId,
+        action,
+        location,
+      });
+
+      await this.loadMessages(chatId);
+      await this.loadChats({ preferredChatId: chatId });
+    } catch (e) {
+      this.setState({
+        proposalActionError: e?.message ?? "ตอบกลับข้อเสนอนัดรับไม่สำเร็จ",
+        proposalActionErrorMessageId: normalizedMessageId,
+      });
+    } finally {
+      this.setState({ proposalActionLoadingId: "" });
+    }
+  };
+
   sendMessage = async (e) => {
     e.preventDefault();
     const { selectedChatId, draftText, draftImageFile } = this.state;
@@ -201,9 +235,13 @@ export class ChatPage extends React.Component {
       draftImageFile,
       sending,
       sendingError,
+      proposalActionLoadingId,
+      proposalActionError,
+      proposalActionErrorMessageId,
     } = this.state;
     const userId = this.props.user?.id ?? "";
     const activeChat = this.getActiveChat();
+    const canSellerRespondMeetupProposal = safeText(activeChat?.ownerId) === safeText(userId);
 
     if (!activeChat) {
       return (
@@ -249,6 +287,12 @@ export class ChatPage extends React.Component {
                 key={message.id || `${message.chatId || activeChat.id}-${index}`}
                 message={message}
                 mine={message.isMine(userId)}
+                canSellerRespondMeetupProposal={canSellerRespondMeetupProposal}
+                onRespondMeetupProposal={this.respondMeetupProposal}
+                responding={proposalActionLoadingId === message.id}
+                actionError={
+                  proposalActionErrorMessageId === message.id ? proposalActionError : ""
+                }
               />
             ))}
           </div>
@@ -375,7 +419,30 @@ class ChatListItem extends React.Component {
 
 class MessageBubble extends React.Component {
   render() {
-    const { message, mine } = this.props;
+    const {
+      message,
+      mine,
+      canSellerRespondMeetupProposal,
+      onRespondMeetupProposal,
+      responding,
+      actionError,
+    } = this.props;
+
+    if (message?.isMeetupProposal?.()) {
+      return (
+        <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+          <MeetupProposalCard
+            message={message}
+            mine={mine}
+            canSellerRespond={canSellerRespondMeetupProposal}
+            onRespond={onRespondMeetupProposal}
+            responding={responding}
+            error={actionError}
+          />
+        </div>
+      );
+    }
+
     const bubbleClass = mine
       ? "bg-zinc-900 text-white border-zinc-900"
       : "bg-zinc-100 text-zinc-800 border-zinc-200";
@@ -392,6 +459,208 @@ class MessageBubble extends React.Component {
           {message.hasText() ? <div className="text-sm whitespace-pre-wrap break-words">{message.text}</div> : null}
           <div className={`text-[10px] ${mine ? "text-zinc-300" : "text-zinc-500"}`}>{message.getTimeLabel()}</div>
         </div>
+      </div>
+    );
+  }
+}
+
+class MeetupProposalCard extends React.Component {
+  state = {
+    editingCounterLocation: false,
+    counterLocation: this.getDefaultCounterLocation(this.props),
+  };
+
+  componentDidUpdate(prevProps) {
+    const prevLocation =
+      prevProps.message?.meetupProposal?.responseLocation ||
+      prevProps.message?.meetupProposal?.location ||
+      "";
+    const nextLocation =
+      this.props.message?.meetupProposal?.responseLocation ||
+      this.props.message?.meetupProposal?.location ||
+      "";
+
+    if (prevProps.message?.id !== this.props.message?.id || prevLocation !== nextLocation) {
+      this.setState({
+        editingCounterLocation: false,
+        counterLocation: this.getDefaultCounterLocation(this.props),
+      });
+    }
+  }
+
+  getDefaultCounterLocation(props = this.props) {
+    return (
+      props?.message?.meetupProposal?.responseLocation ||
+      props?.message?.meetupProposal?.location ||
+      ""
+    );
+  }
+
+  openCounterEditor = () => {
+    this.setState({
+      editingCounterLocation: true,
+      counterLocation: this.getDefaultCounterLocation(),
+    });
+  };
+
+  closeCounterEditor = () => {
+    this.setState({
+      editingCounterLocation: false,
+      counterLocation: this.getDefaultCounterLocation(),
+    });
+  };
+
+  setCounterLocation = (value) => {
+    this.setState({ counterLocation: value ?? "" });
+  };
+
+  submitAction = (action) => {
+    this.props.onRespond?.({
+      messageId: this.props.message?.id,
+      action,
+      location: this.state.counterLocation,
+    });
+  };
+
+  renderStatusBadge(message) {
+    const status = message?.getMeetupProposalStatus?.() ?? "";
+    const label = message?.getMeetupProposalStatusLabel?.() ?? "ข้อเสนอนัดรับ";
+    const className =
+      status === "awaiting_meetup"
+        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+        : status === "countered_by_seller"
+          ? "border-sky-200 bg-sky-50 text-sky-700"
+          : status === "cancelled_by_seller"
+            ? "border-red-200 bg-red-50 text-red-700"
+            : "border-amber-200 bg-amber-50 text-amber-700";
+
+    return <div className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${className}`}>{label}</div>;
+  }
+
+  render() {
+    const { message, mine, canSellerRespond, responding, error } = this.props;
+    const { editingCounterLocation, counterLocation } = this.state;
+    const proposalStatus = message?.getMeetupProposalStatus?.() ?? "";
+    const proposalLocation = message?.meetupProposal?.location ?? "";
+    const responseLocation = message?.meetupProposal?.responseLocation ?? "";
+    const canAct = canSellerRespond && proposalStatus === "pending_seller_response";
+
+    return (
+      <div
+        className={`max-w-[85%] rounded-2xl border p-3 space-y-3 ${
+          mine ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-200 bg-white text-zinc-800"
+        }`}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <div className="text-sm font-semibold">ข้อเสนอสถานที่นัดรับ</div>
+            <div className={`text-[11px] ${mine ? "text-zinc-300" : "text-zinc-500"}`}>
+              คำสั่งซื้อ #{message?.orderId || "-"}
+            </div>
+          </div>
+          {this.renderStatusBadge(message)}
+        </div>
+
+        <div className={`rounded-xl border p-3 ${mine ? "border-white/15 bg-white/10" : "border-zinc-200 bg-zinc-50"}`}>
+          <div className={`text-xs ${mine ? "text-zinc-300" : "text-zinc-500"}`}>สถานที่ที่ผู้ซื้อเสนอ</div>
+          <div className="mt-1 whitespace-pre-wrap break-words text-sm font-medium">
+            {proposalLocation || "ยังไม่ได้ระบุสถานที่นัดรับ"}
+          </div>
+          {responseLocation ? (
+            <>
+              <div className={`mt-3 text-xs ${mine ? "text-zinc-300" : "text-zinc-500"}`}>สถานที่ที่คนขายเสนอใหม่</div>
+              <div className="mt-1 whitespace-pre-wrap break-words text-sm font-medium">{responseLocation}</div>
+            </>
+          ) : null}
+        </div>
+
+        {proposalStatus === "awaiting_meetup" ? (
+          <div className={`text-xs ${mine ? "text-zinc-300" : "text-zinc-500"}`}>
+            คนขายยอมรับข้อเสนอแล้ว สถานะตอนนี้คือรอนัดพบ
+          </div>
+        ) : null}
+
+        {proposalStatus === "countered_by_seller" ? (
+          <div className={`text-xs ${mine ? "text-zinc-300" : "text-zinc-500"}`}>
+            คนขายได้เสนอเปลี่ยนสถานที่นัดรับแล้ว สามารถคุยรายละเอียดต่อในแชทนี้ได้
+          </div>
+        ) : null}
+
+        {proposalStatus === "cancelled_by_seller" ? (
+          <div className={`text-xs ${mine ? "text-zinc-300" : "text-zinc-500"}`}>
+            คนขายยกเลิกการนัดรับแล้ว หากต้องการดำเนินการต่อให้คุยรายละเอียดใหม่ในแชท
+          </div>
+        ) : null}
+
+        {canAct ? (
+          <div className="space-y-2">
+            {!editingCounterLocation ? (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                  onClick={() => this.submitAction("accept")}
+                  disabled={responding}
+                >
+                  ยอมรับข้อเสนอ
+                </button>
+                <button
+                  type="button"
+                  className={`rounded-xl px-3 py-2 text-xs font-semibold ${
+                    mine ? "border border-white/20 text-white" : "border border-zinc-200 text-zinc-700"
+                  }`}
+                  onClick={this.openCounterEditor}
+                  disabled={responding}
+                >
+                  เปลี่ยนสถานที่รับและส่ง
+                </button>
+                <button
+                  type="button"
+                  className="rounded-xl bg-red-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                  onClick={() => this.submitAction("cancel")}
+                  disabled={responding}
+                >
+                  ยกเลิกการนัดรับ
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <textarea
+                  className="min-h-24 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-800 outline-none"
+                  placeholder="ระบุสถานที่นัดรับใหม่ที่ต้องการเสนอ"
+                  value={counterLocation}
+                  onChange={(e) => this.setCounterLocation(e.target.value)}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="rounded-xl bg-zinc-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                    onClick={() => this.submitAction("counter")}
+                    disabled={responding}
+                  >
+                    ส่งสถานที่ใหม่
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-xl border border-zinc-200 px-3 py-2 text-xs font-semibold text-zinc-700 disabled:opacity-60"
+                    onClick={this.closeCounterEditor}
+                    disabled={responding}
+                  >
+                    ปิด
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {error ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+            {error}
+          </div>
+        ) : null}
+
+        <div className={`text-[10px] ${mine ? "text-zinc-300" : "text-zinc-500"}`}>{message?.getTimeLabel?.()}</div>
       </div>
     );
   }

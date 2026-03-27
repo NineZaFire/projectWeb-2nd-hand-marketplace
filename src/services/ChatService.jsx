@@ -85,4 +85,32 @@ export class ChatService {
       message: result?.message ? ChatMessage.fromJSON(result.message) : null,
     };
   }
+
+  // โครง backend: POST /api/chats/:chatId/meetup-proposals/:messageId/respond
+  async respondMeetupProposal({ chatId, messageId, action, location } = {}) {
+    const normalizedChatId = safeText(chatId);
+    const normalizedMessageId = safeText(messageId);
+    const normalizedAction = safeText(action);
+    const normalizedLocation = safeText(location);
+
+    if (!normalizedChatId) throw new Error("ไม่พบ chatId");
+    if (!normalizedMessageId) throw new Error("ไม่พบ messageId");
+    if (!normalizedAction) throw new Error("ไม่พบ action สำหรับข้อเสนอนัดรับ");
+    if (normalizedAction === "counter" && !normalizedLocation) {
+      throw new Error("กรุณาระบุสถานที่นัดรับใหม่");
+    }
+
+    const result = await this.http.post(
+      `/api/chats/${encodeURIComponent(normalizedChatId)}/meetup-proposals/${encodeURIComponent(normalizedMessageId)}/respond`,
+      {
+        action: normalizedAction,
+        location: normalizedLocation,
+      },
+    );
+
+    return {
+      chat: result?.chat ? ChatRoom.fromJSON(result.chat) : null,
+      message: result?.message ? ChatMessage.fromJSON(result.message) : null,
+    };
+  }
 }

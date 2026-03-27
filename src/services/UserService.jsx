@@ -42,4 +42,12 @@ export class UserService {
 
     return { user: result?.user ? User.fromJSON(result.user) : null };
   }
+
+  // (โครง) ลบบัญชีผู้ใช้ปัจจุบันออกจาก database
+  async deleteMe() {
+    await this.http.request("/api/users/me", {
+      method: "DELETE",
+    });
+    return { ok: true };
+  }
 }
