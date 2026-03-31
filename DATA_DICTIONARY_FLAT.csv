@@ -1,0 +1,166 @@
+Collection,Parent Field,Field Name,Data Type,Description,Format/Example,Constraints
+users,,_id,ObjectId,รหัสผู้ใช้,660f...,Primary Key; Auto Generated
+users,,username,String,ชื่อผู้ใช้สำหรับระบบ,kikibibi,Required; Trim
+users,,name,String,ชื่อที่แสดง,Kiki Bibi,"Default: """""
+users,,email,String,อีเมลผู้ใช้,user@email.com,Required; Unique; Lowercase
+users,,password,String,รหัสผ่านที่เข้ารหัสแล้ว,hashed_password,Required; Min Length 6
+users,,phone,String,เบอร์โทรศัพท์,0899999999,"Default: """""
+users,,address,String,ที่อยู่หลัก,"Bangkok, Thailand","Default: """""
+users,,addresses,Array<SavedAddress>,รายการที่อยู่ที่บันทึกไว้,"[{...}]",Max 5 items
+users,,avatarUrl,String,URL รูปโปรไฟล์,/uploads/avatar-1.jpg,"Default: """""
+users,,role,String,สิทธิ์ผู้ใช้,"user, admin","Default: user"
+users,,banStatus,String,สถานะบัญชี,"active, banned","Default: active"
+users,,reviewedAt,Date,วันที่แอดมินตรวจบัญชี,2026-03-31T10:00:00Z,Default null
+users,,moderationNote,String,หมายเหตุจากแอดมิน,Verified account,"Default: """""
+users,,createdAt,Date,วันที่สร้างข้อมูล,2026-03-31T10:00:00Z,Auto Timestamp
+users,,updatedAt,Date,วันที่แก้ไขล่าสุด,2026-03-31T10:30:00Z,Auto Timestamp
+users,addresses[],id,String,รหัสที่อยู่,addr_001,"Default: """""
+users,addresses[],label,String,ชื่อกำกับที่อยู่,"บ้าน, หอพัก","Default: """""
+users,addresses[],recipientName,String,ชื่อผู้รับ,สมชาย ใจดี,"Default: """""
+users,addresses[],phone,String,เบอร์ผู้รับ,0812345678,"Default: """""
+users,addresses[],address,String,รายละเอียดที่อยู่จัดส่ง,99/9 กรุงเทพ,"Default: """""
+users,addresses[],isDefault,Boolean,เป็นที่อยู่หลักหรือไม่,"true / false","Default: false"
+shops,,_id,ObjectId,รหัสร้านค้า,6610...,Primary Key
+shops,,owner,ObjectId,อ้างอิงเจ้าของร้าน,User _id,Required; Unique; Ref User
+shops,,shopName,String,ชื่อร้าน,ร้านค้ามือขาย,"Default: """""
+shops,,citizenId,String,เลขบัตรประชาชนผู้ขาย,1234567890123,"Default: """""
+shops,,birthDate,String,วันเดือนปีเกิดผู้ขาย,1999-01-31,"Default: """""
+shops,,description,String,คำอธิบายร้าน,ขายของมือสอง,"Default: """""
+shops,,contact,String,ช่องทางติดต่อร้าน,Line: kikibibi,"Default: """""
+shops,,avatarUrl,String,รูปร้าน,/uploads/shop-1.jpg,"Default: """""
+shops,,parcelQrCodeUrl,String,QR รับชำระค่าส่งหรือสินค้า,/uploads/qr-1.png,"Default: """""
+shops,,bankName,String,ธนาคารสำหรับรับโอน,กสิกรไทย,"Default: """""
+shops,,bankAccountName,String,ชื่อบัญชีธนาคาร,สมชาย ใจดี,"Default: """""
+shops,,bankAccountNumber,String,เลขบัญชีธนาคาร,1234567890,"Default: """""
+shops,,kycStatus,String,สถานะ KYC,"unsubmitted, pending, approved, rejected","Enum; Default: unsubmitted"
+shops,,kycSubmittedAt,Date,วันที่ส่ง KYC,2026-03-31T10:00:00Z,Default null
+shops,,kycReviewedAt,Date,วันที่ตรวจ KYC,2026-03-31T11:00:00Z,Default null
+shops,,kycApprovedAt,Date,วันที่อนุมัติ KYC,2026-03-31T11:30:00Z,Default null
+shops,,moderationNote,String,หมายเหตุจากแอดมิน,Approved,"Default: """""
+shops,,createdAt,Date,วันที่สร้างข้อมูล,2026-03-31T10:00:00Z,Auto Timestamp
+shops,,updatedAt,Date,วันที่แก้ไขล่าสุด,2026-03-31T10:30:00Z,Auto Timestamp
+products,,_id,ObjectId,รหัสสินค้า,6611...,Primary Key
+products,,title,String,ชื่อสินค้า,iPhone 13,Required; Trim
+products,,description,String,รายละเอียดสินค้า,ใช้งานปกติ,"Default: """""
+products,,price,Number,ราคาสินค้า,6500,Required
+products,,exchangeItem,String,ของที่ต้องการแลก,หนังสือการ์ตูน,"Default: """""
+products,,category,String,หมวดหมู่สินค้า,อิเล็กทรอนิกส์,Required
+products,,images,Array<String>,รายการ URL รูปสินค้า,"[""/uploads/p1.jpg""]","Default: []"
+products,,seller,ObjectId,ผู้ขายสินค้า,User _id,Required; Ref User
+products,,status,String,สถานะสินค้า,"available, sold","Enum; Default: available"
+products,,soldAt,Date,วันที่ขายสำเร็จ,2026-03-31T12:00:00Z,Default null
+products,,soldOrderId,String,ออเดอร์ที่ทำให้สินค้าขายแล้ว,Order _id,"Default: """""
+products,,createdAt,Date,วันที่สร้างข้อมูล,2026-03-31T10:00:00Z,Auto Timestamp
+products,,updatedAt,Date,วันที่แก้ไขล่าสุด,2026-03-31T10:30:00Z,Auto Timestamp
+carts,,_id,ObjectId,รหัสตะกร้า,6612...,Primary Key
+carts,,user,ObjectId,เจ้าของตะกร้า,User _id,Required; Unique; Indexed; Ref User
+carts,,items,Array<CartItem>,รายการสินค้าในตะกร้า,"[{...}]","Default: []"
+carts,,createdAt,Date,วันที่สร้างข้อมูล,2026-03-31T10:00:00Z,Auto Timestamp
+carts,,updatedAt,Date,วันที่แก้ไขล่าสุด,2026-03-31T10:30:00Z,Auto Timestamp
+carts,items[],_id,ObjectId,รหัสรายการในตะกร้า,6612...,Auto Generated
+carts,items[],product,ObjectId,อ้างอิงสินค้า,Product _id,Required; Ref Product
+carts,items[],quantity,Number,จำนวนสินค้า,1,"Min 1; Default 1"
+carts,items[],createdAt,Date,วันที่เพิ่มรายการ,2026-03-31T10:00:00Z,Auto Timestamp
+carts,items[],updatedAt,Date,วันที่แก้ไขรายการ,2026-03-31T10:30:00Z,Auto Timestamp
+orders,,_id,ObjectId,รหัสคำสั่งซื้อ,6613...,Primary Key
+orders,,user,ObjectId,ผู้ซื้อ,User _id,Required; Indexed; Ref User
+orders,,status,String,สถานะรวมของออเดอร์,"pending, completed","Default: pending"
+orders,,notes,String,หมายเหตุจากผู้ซื้อ,โทรก่อนส่ง,"Default: """""
+orders,,totalPrice,Number,ราคารวมทั้งหมด,1890,"Default: 0"
+orders,,shopOrders,Array<ShopOrder>,คำสั่งซื้อแยกตามร้าน,"[{...}]","Default: []"
+orders,,createdAt,Date,วันที่สร้างข้อมูล,2026-03-31T10:00:00Z,Auto Timestamp
+orders,,updatedAt,Date,วันที่แก้ไขล่าสุด,2026-03-31T10:30:00Z,Auto Timestamp
+orders,shopOrders[],shopOrderKey,String,รหัสคำสั่งซื้อย่อยของร้าน,shop-001,Required
+orders,shopOrders[],ownerId,ObjectId,เจ้าของร้าน,User _id,Required; Ref User
+orders,shopOrders[],shopId,ObjectId,ร้านค้าที่เกี่ยวข้อง,Shop _id,Ref Shop; Default null
+orders,shopOrders[],shopName,String,ชื่อร้าน,ร้านค้ามือขาย,"Default: """""
+orders,shopOrders[],shippingMethod,String,วิธีรับสินค้า,"meetup, parcel","Enum; Default: meetup"
+orders,shopOrders[],status,String,สถานะออเดอร์ย่อย,"pending, parcel_in_transit","Default: """""
+orders,shopOrders[],items,Array<OrderItem>,รายการสินค้าในร้านนั้น,"[{...}]","Default: []"
+orders,shopOrders[],subtotal,Number,ราคารวมย่อย,890,"Default: 0"
+orders,shopOrders[],meetupProposal,Object,ข้อมูลนัดรับ,{...},Default null
+orders,shopOrders[],parcelPayment,Object,ข้อมูลการชำระพัสดุ,{...},Default null
+orders,shopOrders[],parcelShipment,Object,ข้อมูลการจัดส่งพัสดุ,{...},Default null
+orders,shopOrders[],adminReport,Object,ข้อมูลรายงานถึงแอดมิน,{...},Default null
+orders,shopOrders[],buyerShippingAddress,Object,ที่อยู่ปลายทางผู้ซื้อ,{...},Default null
+orders,shopOrders[].items[],_id,ObjectId,รหัสรายการสินค้าในออเดอร์,6614...,Auto Generated
+orders,shopOrders[].items[],productId,ObjectId,สินค้าที่ซื้อ,Product _id,Required; Ref Product
+orders,shopOrders[].items[],name,String,ชื่อสินค้า ณ เวลาสั่งซื้อ,iPhone 13,"Default: """""
+orders,shopOrders[].items[],imageUrl,String,รูปสินค้า ณ เวลาสั่งซื้อ,/uploads/p1.jpg,"Default: """""
+orders,shopOrders[].items[],price,Number,ราคาต่อชิ้น,890,"Default: 0"
+orders,shopOrders[].items[],quantity,Number,จำนวน,1,"Min 1; Default 1"
+orders,shopOrders[].parcelPayment,qrCodeUrl,String,QR สำหรับการชำระ,/uploads/qr-1.png,"Default: """""
+orders,shopOrders[].parcelPayment,bankName,String,ธนาคารร้านค้า,กสิกรไทย,"Default: """""
+orders,shopOrders[].parcelPayment,bankAccountName,String,ชื่อบัญชีร้านค้า,สมชาย ใจดี,"Default: """""
+orders,shopOrders[].parcelPayment,bankAccountNumber,String,เลขบัญชีร้านค้า,1234567890,"Default: """""
+orders,shopOrders[].parcelPayment,receiptImageUrl,String,หลักฐานการโอน,/uploads/slip-1.png,"Default: """""
+orders,shopOrders[].parcelPayment,paymentMethod,String,วิธีชำระเงิน,"qr, bank_transfer, cod","Default: """""
+orders,shopOrders[].parcelPayment,status,String,สถานะการตรวจการชำระ,"pending, verified","Default: """""
+orders,shopOrders[].parcelPayment,submittedAt,String,วันที่ผู้ซื้อส่งหลักฐาน,2026-03-31 10:30,"Default: """""
+orders,shopOrders[].parcelPayment,verifiedAt,String,วันที่ผู้ขายตรวจแล้ว,2026-03-31 11:00,"Default: """""
+orders,shopOrders[].parcelPayment,verifiedBy,String,ผู้ตรวจสอบ,User _id or name,"Default: """""
+orders,shopOrders[].parcelShipment,trackingNumber,String,เลขพัสดุ,TH123456789,"Default: """""
+orders,shopOrders[].parcelShipment,carrier,String,บริษัทขนส่ง,Flash Express,"Default: """""
+orders,shopOrders[].parcelShipment,status,String,สถานะพัสดุ,"preparing, shipped","Default: """""
+orders,shopOrders[].parcelShipment,note,String,หมายเหตุการส่ง,ฝากไว้หน้าห้อง,"Default: """""
+orders,shopOrders[].parcelShipment,preparedAt,String,เวลาที่เตรียมส่ง,2026-03-31 10:00,"Default: """""
+orders,shopOrders[].parcelShipment,shippedAt,String,เวลาที่ส่งแล้ว,2026-03-31 11:00,"Default: """""
+orders,shopOrders[].parcelShipment,updatedAt,String,เวลาอัปเดตล่าสุด,2026-03-31 11:10,"Default: """""
+orders,shopOrders[].buyerShippingAddress,addressId,String,รหัสที่อยู่ที่เลือก,addr_001,"Default: """""
+orders,shopOrders[].buyerShippingAddress,label,String,ชื่อกำกับที่อยู่,บ้าน,"Default: """""
+orders,shopOrders[].buyerShippingAddress,name,String,ชื่อผู้รับ,สมหญิง ใจดี,"Default: """""
+orders,shopOrders[].buyerShippingAddress,phone,String,เบอร์ผู้รับ,0812345678,"Default: """""
+orders,shopOrders[].buyerShippingAddress,address,String,ที่อยู่จัดส่งจริง,99/9 กรุงเทพ,"Default: """""
+chats,,_id,ObjectId,รหัสห้องแชท,6615...,Primary Key
+chats,,productId,ObjectId,สินค้าที่อ้างอิงในแชท,Product _id,Required; Indexed; Ref Product
+chats,,ownerId,ObjectId,คนขาย,User _id,Required; Indexed; Ref User
+chats,,buyerId,ObjectId,คนซื้อ,User _id,Required; Indexed; Ref User
+chats,,messages,Array<ChatMessage>,รายการข้อความ,"[{...}]","Default: []"
+chats,,ownerLastReadAt,Date,เวลาอ่านล่าสุดของผู้ขาย,2026-03-31T10:00:00Z,Default null
+chats,,buyerLastReadAt,Date,เวลาอ่านล่าสุดของผู้ซื้อ,2026-03-31T10:05:00Z,Default null
+chats,,createdAt,Date,วันที่สร้างห้องแชท,2026-03-31T10:00:00Z,Auto Timestamp
+chats,,updatedAt,Date,วันที่แก้ไขล่าสุด,2026-03-31T10:30:00Z,Auto Timestamp
+chats,messages[],_id,ObjectId,รหัสข้อความ,6616...,Auto Generated
+chats,messages[],senderId,ObjectId,ผู้ส่งข้อความ,User _id,Required; Ref User
+chats,messages[],type,String,ประเภทข้อความ,"text, image, video, meetup_proposal","Enum; Default: text"
+chats,messages[],orderId,ObjectId,อ้างอิงคำสั่งซื้อ,Order _id,Ref Order; Default null
+chats,messages[],text,String,ข้อความแชท,สนใจสินค้าชิ้นนี้,"Default: """""
+chats,messages[],imageUrl,String,URL รูปที่ส่งในแชท,/uploads/chat-1.jpg,"Default: """""
+chats,messages[],videoUrl,String,URL วิดีโอที่ส่งในแชท,/uploads/chat-1.mp4,"Default: """""
+chats,messages[],meetupProposal,Object,ข้อมูลข้อเสนอนัดรับ,{...},Default null
+chats,messages[],createdAt,Date,วันที่ส่งข้อความ,2026-03-31T10:00:00Z,Default Date.now
+reports,,_id,ObjectId,รหัสรายงาน,6617...,Primary Key
+reports,,reportType,String,ประเภทรายงาน,"product, shop",Required; Enum
+reports,,productId,ObjectId,สินค้าที่ถูกรายงาน,Product _id,Ref Product; Default null
+reports,,productOwnerId,ObjectId,เจ้าของสินค้า,User _id,Ref User; Default null
+reports,,productName,String,ชื่อสินค้า,iPhone 13,"Default: """""
+reports,,productCategory,String,หมวดสินค้า,อิเล็กทรอนิกส์,"Default: """""
+reports,,productImageUrl,String,รูปสินค้า,/uploads/p1.jpg,"Default: """""
+reports,,shopId,ObjectId,ร้านที่ถูกรายงาน,Shop _id,Ref Shop; Default null
+reports,,shopOwnerId,ObjectId,เจ้าของร้าน,User _id,Ref User; Default null
+reports,,shopName,String,ชื่อร้าน,ร้านค้ามือขาย,"Default: """""
+reports,,shopAvatarUrl,String,รูปร้าน,/uploads/shop-1.jpg,"Default: """""
+reports,,reporterId,ObjectId,ผู้รายงาน,User _id,Required; Ref User
+reports,,reporterName,String,ชื่อผู้รายงาน,Kiki Bibi,"Default: """""
+reports,,reason,String,เหตุผลที่รายงาน,ขายของผิดกฎ,Required
+reports,,source,String,หน้าต้นทางที่รายงาน,product_detail,"Default: """""
+reports,,status,String,สถานะรายงาน,"open, dismissed, taken_down","Enum; Default: open"
+reports,,resolvedAt,Date,วันที่ปิดเคส,2026-03-31T12:00:00Z,Default null
+reports,,resolutionNote,String,หมายเหตุการปิดเคส,Removed by admin,"Default: """""
+reports,,createdAt,Date,วันที่สร้างรายงาน,2026-03-31T10:00:00Z,Auto Timestamp
+reports,,updatedAt,Date,วันที่แก้ไขล่าสุด,2026-03-31T10:30:00Z,Auto Timestamp
+notifications,,_id,ObjectId,รหัสแจ้งเตือน,6618...,Primary Key
+notifications,,user,ObjectId,ผู้รับแจ้งเตือน,User _id,Required; Indexed; Ref User
+notifications,,type,String,ประเภทแจ้งเตือน,"order_created, kyc_updated",Required; Indexed
+notifications,,title,String,หัวข้อแจ้งเตือน,ร้านค้าได้ส่งพัสดุแล้ว,Required
+notifications,,message,String,รายละเอียดแจ้งเตือน,เลขพัสดุ 123456,"Default: """""
+notifications,,target,Mixed/Object,เป้าหมายปลายทางของแจ้งเตือน,"{ route: ""orders"", params: {} }",Default object
+notifications,,metadata,Mixed/Object,ข้อมูลเสริมสำหรับระบบ,"{ orderId: ""..."" }",Default object
+notifications,,readAt,Date,วันที่อ่านแจ้งเตือน,2026-03-31T10:00:00Z,Default null; Indexed
+notifications,,createdAt,Date,วันที่สร้างข้อมูล,2026-03-31T10:00:00Z,Auto Timestamp
+notifications,,updatedAt,Date,วันที่แก้ไขล่าสุด,2026-03-31T10:30:00Z,Auto Timestamp
+categories,,_id,ObjectId,รหัสหมวดหมู่,6619...,Primary Key
+categories,,name,String,ชื่อหมวดหมู่,หนังสือ,Required; Unique; Trim
+categories,,description,String,คำอธิบายหมวดหมู่,หนังสือทั่วไป,"Default: """""
+categories,,createdAt,Date,วันที่สร้างข้อมูล,2026-03-31T10:00:00Z,Auto Timestamp
+categories,,updatedAt,Date,วันที่แก้ไขล่าสุด,2026-03-31T10:30:00Z,Auto Timestamp

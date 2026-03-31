@@ -1,0 +1,400 @@
+const Shop = require("../models/Shop");
+const Product = require("../models/Product");
+const mongoose = require("mongoose");
+const { assertApprovedShopForSelling } = require("../services/shopKycService");
+const { notifyAdmins } = require("../services/notificationService");
+
+const normalizeProductStatus = (value) => {
+  const normalizedValue = `${value ?? ""}`.trim().toLowerCase();
+  return normalizedValue === "sold" ? "sold" : "available";
+};
+
+const normalizeBirthDate = (value) => {
+  const normalizedValue = `${value ?? ""}`.trim();
+  if (!normalizedValue) return "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedValue)) return "";
+
+  const parsedDate = new Date(`${normalizedValue}T00:00:00.000Z`);
+  if (Number.isNaN(parsedDate.getTime())) return "";
+
+  const [year, month, day] = normalizedValue.split("-").map((entry) => Number(entry));
+  if (
+    parsedDate.getUTCFullYear() !== year ||
+    parsedDate.getUTCMonth() + 1 !== month ||
+    parsedDate.getUTCDate() !== day
+  ) {
+    return "";
+  }
+
+  return normalizedValue;
+};
+
+const normalizeBankAccountNumber = (value) =>
+  `${value ?? ""}`
+    .replace(/\D+/g, "")
+    .slice(0, 20);
+
+const mapShop = (shop) => {
+  if (!shop) return null;
+
+  return {
+    id: shop._id,
+    ownerId: shop.owner,
+    shopName: shop.shopName,
+    citizenId: shop.citizenId,
+    birthDate: shop.birthDate,
+    description: shop.description,
+    contact: shop.contact,
+    avatarUrl: shop.avatarUrl,
+    parcelQrCodeUrl: shop.parcelQrCodeUrl,
+    bankName: shop.bankName,
+    bankAccountName: shop.bankAccountName,
+    bankAccountNumber: shop.bankAccountNumber,
+    kycStatus: shop.kycStatus,
+    kycSubmittedAt: shop.kycSubmittedAt,
+    kycReviewedAt: shop.kycReviewedAt,
+    kycApprovedAt: shop.kycApprovedAt,
+    moderationNote: shop.moderationNote,
+  };
+};
+
+const mapProduct = (product) => {
+  if (!product) return null;
+
+  return {
+    id: product._id,
+    ownerId: product.seller,
+    name: product.title,
+    category: product.category,
+    imageUrl: Array.isArray(product.images) && product.images.length ? product.images[0] : "",
+    imageUrls: Array.isArray(product.images) ? product.images : [],
+    price: product.price,
+    exchangeItem: product.exchangeItem,
+    description: product.description,
+    saleStatus: product.status,
+    soldAt: product.soldAt,
+    soldOrderId: product.soldOrderId,
+    createdAt: product.createdAt,
+  };
+};
+
+const getMyShop = async (req, res) => {
+  try {
+    const shop = await Shop.findOne({ owner: req.user.id });
+
+    return res.status(200).json({
+      success: true,
+      shop: mapShop(shop),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching shop",
+      error: error.message,
+    });
+  }
+};
+
+const upsertMyShop = async (req, res) => {
+  try {
+    const {
+      shopName,
+      citizenId,
+      kycCitizenId,
+      birthDate,
+      description,
+      contact,
+      avatarUrl,
+      parcelQrCodeUrl,
+      bankName,
+      bankAccountName,
+      bankAccountNumber,
+    } = req.body;
+
+    const uploadedQrPath = req.file ? `/uploads/${req.file.filename}` : undefined;
+    const normalizedCitizenId = `${citizenId ?? kycCitizenId ?? ""}`.replace(/\D+/g, "").slice(0, 13);
+    const normalizedBirthDate = normalizeBirthDate(birthDate);
+    const normalizedBankAccountNumber = normalizeBankAccountNumber(bankAccountNumber);
+
+    const existingShop = await Shop.findOne({ owner: req.user.id });
+    const nextCitizenId = normalizedCitizenId || existingShop?.citizenId || "";
+    const nextParcelQrCodeUrl =
+      uploadedQrPath ??
+      parcelQrCodeUrl ??
+      existingShop?.parcelQrCodeUrl ??
+      "";
+    const hasKycEvidence = Boolean(nextCitizenId || nextParcelQrCodeUrl);
+    const hasEvidenceChanged =
+      nextCitizenId !== (existingShop?.citizenId ?? "") ||
+      nextParcelQrCodeUrl !== (existingShop?.parcelQrCodeUrl ?? "");
+    let nextKycStatus = existingShop?.kycStatus ?? "unsubmitted";
+    let nextKycSubmittedAt = existingShop?.kycSubmittedAt ?? null;
+    let nextKycReviewedAt = existingShop?.kycReviewedAt ?? null;
+    let nextKycApprovedAt = existingShop?.kycApprovedAt ?? null;
+    let nextModerationNote = existingShop?.moderationNote ?? "";
+
+    if (!hasKycEvidence) {
+      nextKycStatus = "unsubmitted";
+      nextKycSubmittedAt = null;
+      nextKycReviewedAt = null;
+      nextKycApprovedAt = null;
+      nextModerationNote = "";
+    } else if (!existingShop || hasEvidenceChanged || !["pending", "approved", "rejected"].includes(existingShop?.kycStatus)) {
+      nextKycStatus = "pending";
+      nextKycSubmittedAt = new Date();
+      nextKycReviewedAt = null;
+      nextKycApprovedAt = null;
+      nextModerationNote = "";
+    }
+
+    const shop = await Shop.findOneAndUpdate(
+      { owner: req.user.id },
+      {
+        owner: req.user.id,
+        shopName: shopName ?? existingShop?.shopName ?? "",
+        citizenId: nextCitizenId,
+        birthDate: normalizedBirthDate || existingShop?.birthDate || "",
+        description: description ?? existingShop?.description ?? "",
+        contact: contact ?? existingShop?.contact ?? "",
+        avatarUrl: avatarUrl ?? existingShop?.avatarUrl ?? "",
+        parcelQrCodeUrl: nextParcelQrCodeUrl,
+        bankName: `${bankName ?? existingShop?.bankName ?? ""}`.trim(),
+        bankAccountName: `${bankAccountName ?? existingShop?.bankAccountName ?? ""}`.trim(),
+        bankAccountNumber: normalizedBankAccountNumber || existingShop?.bankAccountNumber || "",
+        kycStatus: nextKycStatus,
+        kycSubmittedAt: nextKycSubmittedAt,
+        kycReviewedAt: nextKycReviewedAt,
+        kycApprovedAt: nextKycApprovedAt,
+        moderationNote: nextModerationNote,
+      },
+      {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true,
+      }
+    );
+    const shouldNotifyAdmins =
+      nextKycStatus === "pending" &&
+      (!existingShop ||
+        hasEvidenceChanged ||
+        `${existingShop?.kycStatus ?? ""}`.trim().toLowerCase() !== "pending");
+
+    if (shouldNotifyAdmins) {
+      await notifyAdmins({
+        type: "kyc_submitted",
+        title: "มีคำขอ KYC ใหม่",
+        message: `ร้าน ${shop.shopName || "ร้านค้า"} ส่งข้อมูล KYC เข้ามาให้ตรวจสอบแล้ว`,
+        target: {
+          route: "admin",
+          params: {
+            section: "members",
+            memberId: `${req.user.id ?? ""}`.trim(),
+            shopId: shop._id.toString(),
+          },
+        },
+        metadata: {
+          shopId: shop._id.toString(),
+          ownerId: `${req.user.id ?? ""}`.trim(),
+        },
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Shop saved successfully",
+      shop: mapShop(shop),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Server error while saving shop",
+      error: error.message,
+    });
+  }
+};
+
+const getMyProducts = async (req, res) => {
+  try {
+    const products = await Product.find({ seller: req.user.id }).sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      products: products.map(mapProduct),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching products",
+      error: error.message,
+    });
+  }
+};
+
+const listParcelPaymentReviews = async (req, res) => {
+  return res.status(200).json({
+    success: true,
+    reviews: [],
+  });
+};
+
+const createMyProduct = async (req, res) => {
+  try {
+    await assertApprovedShopForSelling(req.user.id);
+
+    const { name, category, price, exchangeItem, description, saleStatus, status } = req.body;
+
+    if (!name || !category || !price) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide name, category and price",
+      });
+    }
+
+    const imagePaths = Array.isArray(req.files)
+      ? req.files.map((file) => `/uploads/${file.filename}`)
+      : [];
+
+    const product = await Product.create({
+      title: name,
+      category,
+      price,
+      exchangeItem: exchangeItem ?? "",
+      description: description ?? "",
+      images: imagePaths,
+      seller: req.user.id,
+      status: normalizeProductStatus(saleStatus ?? status),
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Product created successfully",
+      product: mapProduct(product),
+    });
+  } catch (error) {
+    if (error.status === 403) {
+      return res.status(403).json({
+        success: false,
+        code: error.code ?? "SHOP_KYC_REQUIRED",
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error while creating product",
+      error: error.message,
+    });
+  }
+};
+
+const updateMyProduct = async (req, res) => {
+  try {
+    await assertApprovedShopForSelling(req.user.id);
+
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid product id",
+      });
+    }
+
+    const product = await Product.findById(req.params.id);
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
+    }
+
+    if (product.seller.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not allowed to update this product",
+      });
+    }
+
+    product.title = req.body.name ?? product.title;
+    product.category = req.body.category ?? product.category;
+    product.price = req.body.price ?? product.price;
+    product.exchangeItem = req.body.exchangeItem ?? product.exchangeItem;
+    product.description = req.body.description ?? product.description;
+    product.status = normalizeProductStatus(req.body.saleStatus ?? req.body.status ?? product.status);
+
+    if (Array.isArray(req.files) && req.files.length) {
+      product.images = req.files.map((file) => `/uploads/${file.filename}`);
+    }
+
+    await product.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Product updated successfully",
+      product: mapProduct(product),
+    });
+  } catch (error) {
+    if (error.status === 403) {
+      return res.status(403).json({
+        success: false,
+        code: error.code ?? "SHOP_KYC_REQUIRED",
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error while updating product",
+      error: error.message,
+    });
+  }
+};
+
+const deleteMyProduct = async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid product id",
+      });
+    }
+
+    const product = await Product.findById(req.params.id);
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
+    }
+
+    if (product.seller.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not allowed to delete this product",
+      });
+    }
+
+    await Product.findByIdAndDelete(req.params.id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Product deleted successfully",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Server error while deleting product",
+      error: error.message,
+    });
+  }
+};
+
+module.exports = {
+  getMyShop,
+  upsertMyShop,
+  getMyProducts,
+  listParcelPaymentReviews,
+  createMyProduct,
+  updateMyProduct,
+  deleteMyProduct,
+};
